@@ -25431,6 +25431,45 @@ exit 0
 # .grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
 # .stat .n{font-size:18px}
 #}
+#/* ==== Hunter DNS · Liquid Glass refinement (dark / turquoise) ==== */
+#:root{
+#  color-scheme:dark!important;
+#  --bg:#05090d;--card:rgba(13,22,29,.78);--line:rgba(139,177,190,.15);
+#  --line2:rgba(139,210,220,.27);--row:rgba(26,43,52,.72);--track:#091217;
+#  --fg:#e9f7f8;--head:#f6ffff;--muted:#8ba4ad;--dim:#b2c6cb;--faint:#718a93;
+#  --accent:#48ead0;--accent2:#78dfff;--btn:#087f75;--btn-hover:#0b9d8f;
+#  --shadow:0 1px 0 rgba(255,255,255,.055) inset,0 18px 48px rgba(0,0,0,.26);
+#  --pop:0 24px 70px rgba(0,0,0,.52)
+#}
+#:root[data-theme=light]{color-scheme:dark!important;--bg:#05090d;--card:rgba(13,22,29,.78);--line:rgba(139,177,190,.15);--line2:rgba(139,210,220,.27);--row:rgba(26,43,52,.72);--track:#091217;--fg:#e9f7f8;--head:#f6ffff;--muted:#8ba4ad;--dim:#b2c6cb;--faint:#718a93;--accent:#48ead0;--accent2:#78dfff;--btn:#087f75;--btn-hover:#0b9d8f}
+#html,body{background:var(--bg)!important;color:var(--fg)}
+#body{font-family:var(--hd-font)!important;background:radial-gradient(ellipse at 12% 0%,rgba(28,195,180,.11),transparent 34%),radial-gradient(ellipse at 90% 12%,rgba(63,177,235,.09),transparent 30%),var(--bg)!important}
+#body:before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(circle at 50% 0%,rgba(65,231,207,.055),transparent 45%);}
+#header,.topbar,header{background:rgba(9,17,23,.72)!important;border:1px solid var(--line)!important;backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);box-shadow:0 1px 0 rgba(255,255,255,.035) inset,0 14px 40px rgba(0,0,0,.18)!important;border-radius:24px!important}
+#.card,.stat,.panel,.box,.modal,.menu,.dropdown,.tools,section.card{background:linear-gradient(145deg,rgba(20,35,43,.86),rgba(9,17,23,.82))!important;border:1px solid var(--line)!important;border-radius:24px!important;box-shadow:var(--shadow)!important;backdrop-filter:blur(20px) saturate(145%);-webkit-backdrop-filter:blur(20px) saturate(145%);transition:transform .24s var(--ease),border-color .24s ease,box-shadow .24s ease}
+#.card:hover,.stat:hover,.panel:hover{border-color:rgba(72,234,208,.25)!important;box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 20px 52px rgba(0,0,0,.3),0 0 0 1px rgba(72,234,208,.035)!important}
+#nav a,.side nav a,nav a{border-radius:15px!important;transition:background .2s ease,color .2s ease,border-color .2s ease,transform .2s var(--ease)}
+#nav a:hover,.side nav a:hover,nav a:hover{background:rgba(72,234,208,.085)!important;color:var(--head)!important;transform:translateY(-1px)}
+#nav a.active,.side nav a.active,nav a.active{background:linear-gradient(115deg,rgba(72,234,208,.17),rgba(120,223,255,.075))!important;border:1px solid rgba(72,234,208,.19)!important;color:var(--accent)!important;box-shadow:0 0 24px rgba(72,234,208,.045)}
+#button,button,.btn,input[type=submit]{border-radius:14px;transition:transform .18s var(--ease),box-shadow .2s ease,filter .2s ease}
+#button:not(.theme):hover,button:not(.theme):hover,.btn:hover,input[type=submit]:hover{filter:brightness(1.08);box-shadow:0 8px 24px rgba(35,220,195,.12)}
+#button:not(:disabled):active,button:not(:disabled):active,.btn:active{transform:scale(.985)}
+#input,input,select,textarea{background:rgba(4,12,17,.72)!important;color:var(--fg)!important;border:1px solid var(--line2)!important;border-radius:14px!important;outline:none;transition:border-color .2s ease,box-shadow .2s ease}
+#input:focus,input:focus,select:focus,textarea:focus{border-color:rgba(72,234,208,.65)!important;box-shadow:0 0 0 3px rgba(72,234,208,.10)!important}
+#table,table{border-color:var(--line)!important}
+#th,thead th{background:rgba(20,38,47,.9)!important;color:var(--dim)!important;border-bottom:1px solid var(--line2)!important}
+#td,tbody td{border-bottom:1px solid rgba(139,177,190,.09)!important}
+#tbody tr:hover,tbody tr:hover{background:rgba(72,234,208,.045)!important}
+#code,code,.pill,.badge{border-radius:10px}
+#hr,hr{border-color:var(--line)!important;opacity:.8}
+#::selection{background:rgba(72,234,208,.28);color:#fff}
+#@keyframes hd-glass-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+#.card,.stat,.panel{animation:hd-glass-enter .42s var(--ease) both}
+#.card:nth-of-type(2),.stat:nth-of-type(2){animation-delay:.035s}
+#.card:nth-of-type(3),.stat:nth-of-type(3){animation-delay:.07s}
+#@media(max-width:700px){.card,.stat,.panel,section.card{border-radius:19px!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}header,.topbar{border-radius:19px!important}.wrap{padding-inline:12px}}
+#@media(prefers-reduced-motion:reduce){.card,.stat,.panel{animation:none!important;transition:none!important}}
+#/* ==== end Liquid Glass refinement ==== */
 #""" + FX_CSS + HD2_ADMIN_CSS
 #
 ## Where the installer writes the version it installed. Read per page rather
