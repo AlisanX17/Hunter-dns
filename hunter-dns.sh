@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.0.8"
+VERSION="0.0.9"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -16989,6 +16989,68 @@ exit 0
 #@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 #"""
 #
+#HD2_USER_CSS = """/* ==== 0.0.9 Hunter design: SF Arabic, aurora glass ==== */
+#:root{--hd-font:'SF Arabic','SFArabic','SF Arabic Rounded',-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display',Vazirmatn,system-ui,'Segoe UI',Tahoma,sans-serif;--hd-mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;--r-lg:28px;--r-md:20px;--r-sm:14px;--ease:cubic-bezier(.2,.8,.2,1)}
+#:root{color-scheme:dark;--bg:#05080b;--card:#0c1216;--line:#17212a;--line2:#243340;--row:#111a21;--track:#0a1116;--fg:#edf3f6;--head:#f7fbfc;--muted:#8a9aa6;--dim:#a7b5bf;--faint:#687a86;--accent:#3ee0c5;--accent2:#6fd8ff;--btn:#0b8577;--btn-hover:#0e9c8c;--on-btn:#ffffff;--danger:#7a2c3a;--warn:#f0b840;--bad:#ff6b81;--good-bg:color-mix(in srgb,var(--accent) 12%,var(--card));--err-bg:#1d0f13;--warn-bg:#1d180b;--warn-line:#5e4d25;--c-blue:#14d4b8;--sun:inline;--moon:none;--shadow:0 1px 0 rgba(255,255,255,.04) inset,0 24px 48px -28px rgba(0,0,0,.85);--pop:0 24px 64px -12px rgba(0,0,0,.7)}
+#@media (prefers-color-scheme: light){:root:not([data-theme=dark]){color-scheme:light;--bg:#f2f6f7;--card:#ffffff;--line:#e2e9ec;--line2:#cfd9de;--row:#edf2f4;--track:#e4ecef;--fg:#0b1519;--head:#0b1519;--muted:#56666f;--dim:#46565f;--faint:#6a7a83;--accent:#0f766e;--accent2:#0891b2;--btn:#0f766e;--btn-hover:#115e59;--on-btn:#ffffff;--danger:#cf222e;--warn:#9a6700;--bad:#cf222e;--err-bg:#ffebe9;--warn-bg:#fff8c5;--warn-line:#d4a72c;--c-blue:#0f9d8f;--sun:none;--moon:inline;--shadow:0 1px 0 rgba(255,255,255,.9) inset,0 18px 40px -28px rgba(20,50,60,.28);--pop:0 20px 50px -10px rgba(20,50,60,.22)}}
+#:root[data-theme=light]{color-scheme:light;--bg:#f2f6f7;--card:#ffffff;--line:#e2e9ec;--line2:#cfd9de;--row:#edf2f4;--track:#e4ecef;--fg:#0b1519;--head:#0b1519;--muted:#56666f;--dim:#46565f;--faint:#6a7a83;--accent:#0f766e;--accent2:#0891b2;--btn:#0f766e;--btn-hover:#115e59;--on-btn:#ffffff;--danger:#cf222e;--warn:#9a6700;--bad:#cf222e;--err-bg:#ffebe9;--warn-bg:#fff8c5;--warn-line:#d4a72c;--c-blue:#0f9d8f;--sun:none;--moon:inline;--shadow:0 1px 0 rgba(255,255,255,.9) inset,0 18px 40px -28px rgba(20,50,60,.28);--pop:0 20px 50px -10px rgba(20,50,60,.22)}
+#html[dir=rtl] *{letter-spacing:0!important}
+#html[dir] .big,html[dir] code{letter-spacing:.03em!important}
+#body,input,select,textarea,button{font-family:var(--hd-font)}
+#body{background:var(--bg);font-weight:450;line-height:1.85;font-feature-settings:'kern','liga','calt';font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+#h1,h2,h3,th,.brand .name,.v,.big{font-family:var(--hd-font);font-weight:700}
+#code,.big,textarea[readonly]{font-family:var(--hd-mono)}
+#body::before{background:radial-gradient(46% 42% at 12% 6%,color-mix(in srgb,var(--accent) 17%,transparent),transparent 70%),radial-gradient(40% 40% at 92% 14%,color-mix(in srgb,var(--accent2) 14%,transparent),transparent 70%),radial-gradient(50% 46% at 70% 100%,color-mix(in srgb,var(--c-purple) 13%,transparent),transparent 70%);animation:hd-drift 28s ease-in-out infinite alternate}
+#body::after{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:radial-gradient(color-mix(in srgb,var(--fg) 10%,transparent) 1px,transparent 1.3px);background-size:26px 26px;-webkit-mask-image:radial-gradient(75% 55% at 50% 0%,#000,transparent);mask-image:radial-gradient(75% 55% at 50% 0%,#000,transparent)}
+#.card{background:linear-gradient(180deg,color-mix(in srgb,var(--card) 95%,var(--fg) 5%),var(--card) 140px);border:1px solid color-mix(in srgb,var(--line2) 65%,transparent);border-radius:var(--r-lg);box-shadow:var(--shadow)}
+#button:not(.ghost):not(.del):not(.danger):not(.theme):not(.dot),a.btn:not(.ghost),a.dl{border:1px solid color-mix(in srgb,var(--btn) 75%,#fff);color:var(--on-btn);border-radius:var(--r-sm);font-weight:650;background:linear-gradient(180deg,color-mix(in srgb,var(--btn) 86%,#fff),var(--btn) 55%,color-mix(in srgb,var(--btn) 88%,#000));box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 12px 24px -14px color-mix(in srgb,var(--btn) 95%,transparent);transition:transform .15s var(--ease),box-shadow .2s,filter .2s}
+#button:not(.ghost):not(.del):not(.danger):not(.theme):not(.dot):hover,a.btn:not(.ghost):hover,a.dl:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.3) inset,0 16px 30px -14px color-mix(in srgb,var(--btn) 100%,transparent)}
+#button:active,a.btn:active{transform:scale(.97)!important}
+#button::after,a.btn::after{display:none!important}
+#button.ghost,a.btn.ghost{border-radius:var(--r-sm);background:color-mix(in srgb,var(--fg) 4%,transparent);border:1px solid var(--line2);color:var(--dim);font-weight:500}
+#button.ghost:hover,a.btn.ghost:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--line2));color:var(--fg);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+#button.del,button.danger{border-radius:var(--r-sm)}
+#input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea{background:color-mix(in srgb,var(--fg) 4%,var(--bg));border:1px solid var(--line2);border-radius:var(--r-sm);color:var(--fg);transition:border-color .2s,box-shadow .2s,background .2s}
+#input::placeholder,textarea::placeholder{color:var(--faint)}
+#input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
+#code{background:color-mix(in srgb,var(--accent) 9%,var(--bg));border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:9px;padding:2px 8px}
+#table{border-collapse:separate;border-spacing:0}
+#th{background:transparent;font-size:11.5px;font-weight:650;color:var(--faint);border-bottom:1px solid var(--line2)}
+#td{border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+#tbody tr:hover>td{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+#.msg{border-radius:var(--r-md);backdrop-filter:blur(6px)}
+#.msg.good{background:color-mix(in srgb,var(--accent) 11%,var(--card));border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+#.bar{height:9px;border-radius:999px;background:color-mix(in srgb,var(--fg) 8%,transparent)}
+#.bar i{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+#.toast{background:linear-gradient(180deg,color-mix(in srgb,var(--btn) 86%,#fff),var(--btn));color:var(--on-btn);border:1px solid color-mix(in srgb,var(--btn) 70%,#fff);font-weight:600}
+#.brand .name{animation-duration:10s;font-weight:800}
+#.tools{border-radius:999px;background:color-mix(in srgb,var(--card) 72%,transparent);backdrop-filter:blur(18px) saturate(1.5)}
+#details>summary{font-weight:550}
+#svg.chart .axis{font-family:var(--hd-font)}
+#::selection{background:color-mix(in srgb,var(--accent) 38%,transparent)}
+#html,body{max-width:100%;overflow-x:clip}
+#@media (max-width:700px){.top{flex-wrap:wrap;justify-content:center;gap:8px;padding:10px 12px}.topbar{flex-wrap:wrap;justify-content:center}.tools{flex-wrap:wrap;justify-content:center;max-width:100%;gap:6px;padding:6px 10px}.accents{flex-wrap:wrap;gap:6px}.brand .name{white-space:nowrap}}
+#/* -- customer panel -- */
+#.top{top:10px;margin:10px auto 0;width:calc(100% - 24px);max-width:1060px;padding:10px 16px 10px 18px;border:1px solid color-mix(in srgb,var(--line2) 60%,transparent);border-radius:24px;background:color-mix(in srgb,var(--card) 68%,transparent);backdrop-filter:blur(22px) saturate(1.6);box-shadow:var(--shadow)}
+#.stage{padding-top:26px}
+#.card::before{height:2px;background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent);animation:none;opacity:.9}
+#.card>h1{font-size:25px;font-weight:760;color:var(--head)}
+#.card>.sub{color:var(--muted);font-size:13.5px}
+#.icon{border-radius:24px;background:radial-gradient(circle at 30% 20%,color-mix(in srgb,var(--accent) 38%,transparent),color-mix(in srgb,var(--accent2) 12%,transparent));box-shadow:0 14px 34px -14px color-mix(in srgb,var(--accent) 60%,transparent)}
+#.card>.row,.tile{background:linear-gradient(165deg,color-mix(in srgb,var(--accent) 7%,var(--bg)),var(--bg) 70%);border:1px solid color-mix(in srgb,var(--line2) 55%,transparent);border-radius:var(--r-md)}
+#.card>.row .k,.tile .k{color:var(--muted);font-size:12px;font-weight:550}
+#.card>.row .v,.tile .v{font-size:21px;font-weight:760;color:var(--head)}
+#.tile:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));transform:translateY(-2px);transition:transform .25s var(--ease),border-color .25s}
+#.dns{border-radius:24px;border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));background:linear-gradient(155deg,color-mix(in srgb,var(--accent) 10%,var(--bg)),var(--bg) 68%)}
+#.big{border-radius:18px;font-size:21px;font-weight:650;background:color-mix(in srgb,var(--accent) 6%,var(--card));border:1px solid color-mix(in srgb,var(--accent) 34%,var(--line));box-shadow:0 0 44px -22px var(--accent);color:var(--accent)}
+#label.plan{border-radius:var(--r-md);background:color-mix(in srgb,var(--fg) 3%,transparent)}
+#label.plan:has(input:checked){border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
+#a.tk,details.pw,.pay,.thread>div{border-radius:var(--r-md)}
+#.thread .msg-admin{background:color-mix(in srgb,var(--accent) 11%,var(--card));border-color:color-mix(in srgb,var(--accent) 38%,transparent)}
+#.svc .track{height:9px;border-radius:999px}
+#.svc .track i{background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:999px}
+#"""
+#
 #USER_CSS = THEME_CSS + FONT_FACE + """
 #*{box-sizing:border-box}
 #body{margin:0;background:var(--bg);color:var(--fg);
@@ -17145,7 +17207,7 @@ exit 0
 #.theme .sun{display:var(--sun)}.theme .moon{display:var(--moon)}
 #.theme.lang{left:auto;right:14px;font-size:12px;font-weight:700;letter-spacing:.5px}
 #html[lang=en] .fa-only,html:not([lang=en]) .en-only{display:none}
-#""" + FX_CSS
+#""" + FX_CSS + HD2_USER_CSS
 #
 ## Where the installer writes the version it installed. Read per page rather
 ## than once, so it can never disagree with what is on disk.
@@ -25060,6 +25122,70 @@ exit 0
 #@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 #"""
 #
+#HD2_ADMIN_CSS = """/* ==== 0.0.9 Hunter design: SF Arabic, aurora glass ==== */
+#:root{--hd-font:'SF Arabic','SFArabic','SF Arabic Rounded',-apple-system,BlinkMacSystemFont,'SF Pro Text','SF Pro Display',Vazirmatn,system-ui,'Segoe UI',Tahoma,sans-serif;--hd-mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;--r-lg:28px;--r-md:20px;--r-sm:14px;--ease:cubic-bezier(.2,.8,.2,1)}
+#:root{color-scheme:dark;--bg:#05080b;--card:#0c1216;--line:#17212a;--line2:#243340;--row:#111a21;--track:#0a1116;--fg:#edf3f6;--head:#f7fbfc;--muted:#8a9aa6;--dim:#a7b5bf;--faint:#687a86;--accent:#3ee0c5;--accent2:#6fd8ff;--btn:#0b8577;--btn-hover:#0e9c8c;--on-btn:#ffffff;--danger:#7a2c3a;--warn:#f0b840;--bad:#ff6b81;--good-bg:color-mix(in srgb,var(--accent) 12%,var(--card));--err-bg:#1d0f13;--warn-bg:#1d180b;--warn-line:#5e4d25;--c-blue:#14d4b8;--sun:inline;--moon:none;--shadow:0 1px 0 rgba(255,255,255,.04) inset,0 24px 48px -28px rgba(0,0,0,.85);--pop:0 24px 64px -12px rgba(0,0,0,.7)}
+#@media (prefers-color-scheme: light){:root:not([data-theme=dark]){color-scheme:light;--bg:#f2f6f7;--card:#ffffff;--line:#e2e9ec;--line2:#cfd9de;--row:#edf2f4;--track:#e4ecef;--fg:#0b1519;--head:#0b1519;--muted:#56666f;--dim:#46565f;--faint:#6a7a83;--accent:#0f766e;--accent2:#0891b2;--btn:#0f766e;--btn-hover:#115e59;--on-btn:#ffffff;--danger:#cf222e;--warn:#9a6700;--bad:#cf222e;--err-bg:#ffebe9;--warn-bg:#fff8c5;--warn-line:#d4a72c;--c-blue:#0f9d8f;--sun:none;--moon:inline;--shadow:0 1px 0 rgba(255,255,255,.9) inset,0 18px 40px -28px rgba(20,50,60,.28);--pop:0 20px 50px -10px rgba(20,50,60,.22)}}
+#:root[data-theme=light]{color-scheme:light;--bg:#f2f6f7;--card:#ffffff;--line:#e2e9ec;--line2:#cfd9de;--row:#edf2f4;--track:#e4ecef;--fg:#0b1519;--head:#0b1519;--muted:#56666f;--dim:#46565f;--faint:#6a7a83;--accent:#0f766e;--accent2:#0891b2;--btn:#0f766e;--btn-hover:#115e59;--on-btn:#ffffff;--danger:#cf222e;--warn:#9a6700;--bad:#cf222e;--err-bg:#ffebe9;--warn-bg:#fff8c5;--warn-line:#d4a72c;--c-blue:#0f9d8f;--sun:none;--moon:inline;--shadow:0 1px 0 rgba(255,255,255,.9) inset,0 18px 40px -28px rgba(20,50,60,.28);--pop:0 20px 50px -10px rgba(20,50,60,.22)}
+#html[dir=rtl] *{letter-spacing:0!important}
+#html[dir] .big,html[dir] code{letter-spacing:.03em!important}
+#body,input,select,textarea,button{font-family:var(--hd-font)}
+#body{background:var(--bg);font-weight:450;line-height:1.85;font-feature-settings:'kern','liga','calt';font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+#h1,h2,h3,th,.brand .name,.v,.big{font-family:var(--hd-font);font-weight:700}
+#code,.big,textarea[readonly]{font-family:var(--hd-mono)}
+#body::before{background:radial-gradient(46% 42% at 12% 6%,color-mix(in srgb,var(--accent) 17%,transparent),transparent 70%),radial-gradient(40% 40% at 92% 14%,color-mix(in srgb,var(--accent2) 14%,transparent),transparent 70%),radial-gradient(50% 46% at 70% 100%,color-mix(in srgb,var(--c-purple) 13%,transparent),transparent 70%);animation:hd-drift 28s ease-in-out infinite alternate}
+#body::after{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;background-image:radial-gradient(color-mix(in srgb,var(--fg) 10%,transparent) 1px,transparent 1.3px);background-size:26px 26px;-webkit-mask-image:radial-gradient(75% 55% at 50% 0%,#000,transparent);mask-image:radial-gradient(75% 55% at 50% 0%,#000,transparent)}
+#.card{background:linear-gradient(180deg,color-mix(in srgb,var(--card) 95%,var(--fg) 5%),var(--card) 140px);border:1px solid color-mix(in srgb,var(--line2) 65%,transparent);border-radius:var(--r-lg);box-shadow:var(--shadow)}
+#button:not(.ghost):not(.del):not(.danger):not(.theme):not(.dot),a.btn:not(.ghost),a.dl{border:1px solid color-mix(in srgb,var(--btn) 75%,#fff);color:var(--on-btn);border-radius:var(--r-sm);font-weight:650;background:linear-gradient(180deg,color-mix(in srgb,var(--btn) 86%,#fff),var(--btn) 55%,color-mix(in srgb,var(--btn) 88%,#000));box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 12px 24px -14px color-mix(in srgb,var(--btn) 95%,transparent);transition:transform .15s var(--ease),box-shadow .2s,filter .2s}
+#button:not(.ghost):not(.del):not(.danger):not(.theme):not(.dot):hover,a.btn:not(.ghost):hover,a.dl:hover{filter:brightness(1.08);transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.3) inset,0 16px 30px -14px color-mix(in srgb,var(--btn) 100%,transparent)}
+#button:active,a.btn:active{transform:scale(.97)!important}
+#button::after,a.btn::after{display:none!important}
+#button.ghost,a.btn.ghost{border-radius:var(--r-sm);background:color-mix(in srgb,var(--fg) 4%,transparent);border:1px solid var(--line2);color:var(--dim);font-weight:500}
+#button.ghost:hover,a.btn.ghost:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--line2));color:var(--fg);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+#button.del,button.danger{border-radius:var(--r-sm)}
+#input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),select,textarea{background:color-mix(in srgb,var(--fg) 4%,var(--bg));border:1px solid var(--line2);border-radius:var(--r-sm);color:var(--fg);transition:border-color .2s,box-shadow .2s,background .2s}
+#input::placeholder,textarea::placeholder{color:var(--faint)}
+#input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
+#code{background:color-mix(in srgb,var(--accent) 9%,var(--bg));border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:9px;padding:2px 8px}
+#table{border-collapse:separate;border-spacing:0}
+#th{background:transparent;font-size:11.5px;font-weight:650;color:var(--faint);border-bottom:1px solid var(--line2)}
+#td{border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+#tbody tr:hover>td{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+#.msg{border-radius:var(--r-md);backdrop-filter:blur(6px)}
+#.msg.good{background:color-mix(in srgb,var(--accent) 11%,var(--card));border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+#.bar{height:9px;border-radius:999px;background:color-mix(in srgb,var(--fg) 8%,transparent)}
+#.bar i{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+#.toast{background:linear-gradient(180deg,color-mix(in srgb,var(--btn) 86%,#fff),var(--btn));color:var(--on-btn);border:1px solid color-mix(in srgb,var(--btn) 70%,#fff);font-weight:600}
+#.brand .name{animation-duration:10s;font-weight:800}
+#.tools{border-radius:999px;background:color-mix(in srgb,var(--card) 72%,transparent);backdrop-filter:blur(18px) saturate(1.5)}
+#details>summary{font-weight:550}
+#svg.chart .axis{font-family:var(--hd-font)}
+#::selection{background:color-mix(in srgb,var(--accent) 38%,transparent)}
+#html,body{max-width:100%;overflow-x:clip}
+#@media (max-width:700px){.top{flex-wrap:wrap;justify-content:center;gap:8px;padding:10px 12px}.topbar{flex-wrap:wrap;justify-content:center}.tools{flex-wrap:wrap;justify-content:center;max-width:100%;gap:6px;padding:6px 10px}.accents{flex-wrap:wrap;gap:6px}.brand .name{white-space:nowrap}}
+#/* -- admin panel -- */
+#.side{border-radius:30px;background:color-mix(in srgb,var(--card) 70%,transparent);backdrop-filter:blur(26px) saturate(1.6)}
+#.side .brand .name{font-size:20px}
+#.side nav a{font-weight:550;border-radius:15px;padding:9px 14px}
+#.side nav a.on{color:var(--head);background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 22%,transparent),color-mix(in srgb,var(--accent) 5%,transparent));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 32%,transparent),0 10px 24px -16px var(--accent)}
+#.side nav a.on::before{background:var(--accent)}
+#.topbar h1{font-size:26px;font-weight:780}
+#.card{padding:26px;overflow-x:auto}
+#.card:hover{border-color:color-mix(in srgb,var(--accent) 30%,var(--line2))}
+#.card h2{font-size:16.5px;font-weight:720}
+#.stat{padding-inline-end:20px;border-radius:24px;border:1px solid color-mix(in srgb,var(--line2) 60%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--accent) 11%,var(--card)),var(--card) 62%);overflow:hidden}
+#.stat::before{display:none!important}
+#.stat::after{content:'';position:absolute;top:0;inset-inline:20px;height:2px;border-radius:0 0 6px 6px;background:linear-gradient(90deg,var(--accent),transparent)}
+#.stat .n{font-family:var(--hd-font);font-size:31px;font-weight:760;line-height:1.25;background:linear-gradient(135deg,var(--head),color-mix(in srgb,var(--accent) 75%,var(--head)));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+#.stat .l{font-weight:550}
+#.tools::before{font-family:var(--hd-mono);border-radius:9px}
+#.pill{font-weight:650}
+#form.row,div.row{border-radius:var(--r-md)}
+##hd-pal .box{border-radius:28px}
+#body.solo .login .card{border-radius:34px;box-shadow:var(--pop),0 0 90px -34px color-mix(in srgb,var(--accent) 65%,transparent)}
+#body.solo .brand{font-size:32px}
+#"""
+#
 #CSS = THEME_CSS + """
 #*{box-sizing:border-box}
 #body{margin:0;background:var(--bg);color:var(--fg);
@@ -25305,7 +25431,7 @@ exit 0
 # .grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
 # .stat .n{font-size:18px}
 #}
-#""" + FX_CSS
+#""" + FX_CSS + HD2_ADMIN_CSS
 #
 ## Where the installer writes the version it installed. Read per page rather
 ## than once, so it can never disagree with what is on disk.
