@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.0.9"
+VERSION="0.0.3"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -10879,6 +10879,14 @@ exit 0
 #                                   "error": str(state.get("error") or "")[:400]}, sort_keys=True)
 #                if self.store.setting("relay_tunnel_state:" + who) != text:
 #                    self.store.set_setting("relay_tunnel_state:" + who, text)
+#                # Auto-transport: the relay picked a new transport after the
+#                # tunnel stayed down; match it on this exit so both ends agree.
+#                want = str(state.get("auto_want") or "").strip()
+#                if want and self.store.setting("auto_transport") == "1":
+#                    try:
+#                        apply_auto_transport_on_exit(self.store, who, want)
+#                    except Exception as e:
+#                        log_exception("auto-transport on exit not applied: %r" % e)
 #            state = body.get("doh_name")
 #            if isinstance(state, dict):
 #                text = json.dumps({k: str(state.get(k) or "")[:400]
@@ -10982,6 +10990,8 @@ exit 0
 #                                    # panel is the one to say.
 #                                    "tunnel": relay_tunnel(self.store, who, self.relays,
 #                                                           self.tunnel),
+#                                    # Auto-switch transport when the tunnel stays down.
+#                                    "auto_transport": self.store.setting("auto_transport") == "1",
 #                                    # Which exit this relay uses, and the
 #                                    # others after it for when it is down.
 #                                    "exits": relay_exits(self.store, who, self.relays,
@@ -13335,7 +13345,16 @@ exit 0
 ## let it: a layer-3 tunnel's forwarder takes each connection and closes it,
 ## and a tunnel that connected but carries nothing takes it and keeps it. Both
 ## cut every customer of the relay until the tunnel came back.
-#TUNNEL_DOWN = {"down": False}
+#TUNNEL_DOWN = {"down": False, "since": 0.0, "last_switch": 0.0, "tried": []}
+## Preferred order when auto-transport is on: kcp then pck, then the rest
+## that this direction still allows. Both ends must land on the same one -
+## the relay switches first and reports the pick; the panel applies it on the
+## exit on the next sync.
+#AUTO_TRANSPORT_ORDER = {
+#    "reverse": ("kcp", "pck", "stealth", "wss", "wssmux", "tcp", "tcpmux", "xdi", "ws"),
+#    "direct": ("stealth", "wss", "tcp", "ws"),
+#    "l3": ("pck", "kcp", "xdi", "sni", "quic", "udp"),
+#}
 #
 #
 #def note_tunnel(down):
@@ -13344,7 +13363,100 @@ exit 0
 #        log(WARN if down else INFO,
 #            "the tunnel carries nothing - customers go straight to the exit until it does"
 #            if down else "the tunnel carries again - customers go through it")
+#        if down:
+#            TUNNEL_DOWN["since"] = time.time()
+#            TUNNEL_DOWN["tried"] = []
+#        else:
+#            TUNNEL_DOWN["since"] = 0.0
+#            TUNNEL_DOWN["tried"] = []
 #    TUNNEL_DOWN["down"] = down
+#    if down:
+#        try:
+#            maybe_auto_transport()
+#        except Exception as e:
+#            log(WARN, "auto-transport not applied: %s" % e)
+#
+#
+#def maybe_auto_transport():
+#    """If the admin turned auto-transport on and the tunnel has stayed down
+#    long enough, try the next transport in the preferred order and ask the
+#    panel to match it on the exit."""
+#    if (CFG.get("AUTO_TRANSPORT") or "0") != "1":
+#        return
+#    if (CFG.get("TUNNEL") or "off") != "backpack":
+#        return
+#    if not TUNNEL_DOWN["down"] or not TUNNEL_DOWN["since"]:
+#        return
+#    # Wait two minutes of sustained failure before the first switch, and
+#    # three minutes between switches, so a brief blip does not thrash the
+#    # tunnel and the exit has time to take the same transport.
+#    now = time.time()
+#    if now - TUNNEL_DOWN["since"] < 120:
+#        return
+#    if now - TUNNEL_DOWN["last_switch"] < 180:
+#        return
+#    direction = (CFG.get("TUNNEL_DIRECTION") or "reverse").strip()
+#    current = (CFG.get("TUNNEL_TRANSPORT") or "").strip()
+#    order = list(AUTO_TRANSPORT_ORDER.get(direction) or AUTO_TRANSPORT_ORDER["reverse"])
+#    # Keep only transports this direction actually has.
+#    allowed = TUNNEL_TRANSPORTS.get(direction) or order
+#    order = [t for t in order if t in allowed]
+#    if not order:
+#        return
+#    tried = list(TUNNEL_DOWN.get("tried") or [])
+#    if current and current not in tried:
+#        tried.append(current)
+#    nxt = None
+#    for t in order:
+#        if t not in tried:
+#            nxt = t
+#            break
+#    if not nxt:
+#        # One full cycle already tried; wait for the tunnel to recover or
+#        # the admin to pick by hand rather than spinning forever.
+#        log(WARN, "auto-transport: every transport tried, leaving %s" % (current or "?"))
+#        TUNNEL_DOWN["last_switch"] = now
+#        return
+#    toml = TUNNEL_DIR + "/tunnel.toml"
+#    if not os.path.exists(toml):
+#        return
+#    try:
+#        with open(toml, encoding="utf-8") as fh:
+#            body = fh.read()
+#    except OSError:
+#        return
+#    if "transport = " in body:
+#        import re as _re
+#        body2 = _re.sub(r'(transport\s*=\s*")[^"]*(")', r"\g<1>%s\2" % nxt, body, count=1)
+#    elif "carrier = " in body:
+#        import re as _re
+#        body2 = _re.sub(r'(carrier\s*=\s*")[^"]*(")', r"\g<1>%s\2" % nxt, body, count=1)
+#    else:
+#        return
+#    if body2 == body:
+#        return
+#    try:
+#        with open(toml + ".tmp", "w", encoding="utf-8") as fh:
+#            fh.write(body2)
+#        os.chmod(toml + ".tmp", 0o600)
+#        os.replace(toml + ".tmp", toml)
+#    except OSError as e:
+#        log(WARN, "auto-transport could not write tunnel.toml: %s" % e)
+#        return
+#    set_sync_env({"TUNNEL_TRANSPORT": nxt})
+#    CFG["TUNNEL_TRANSPORT"] = nxt
+#    sh("systemctl", "restart", "hunterdns-tunnel")
+#    tried.append(nxt)
+#    TUNNEL_DOWN["tried"] = tried
+#    TUNNEL_DOWN["last_switch"] = now
+#    TUNNEL_DOWN["since"] = now  # require another 2 minutes of failure on the new one
+#    log(WARN, "auto-transport: switched %s -> %s (panel will match on the exit)"
+#        % (current or "?", nxt))
+#    # Tell the panel so the exit end can take the same transport.
+#    state = dict(TUNNEL_REPORT.get("state") or {"on": True})
+#    state["auto_want"] = nxt
+#    state["error"] = (state.get("error") or "") + ("؛ سوییچ خودکار به %s" % nxt)
+#    TUNNEL_REPORT["state"] = state
 #
 #
 #def api_endpoints():
@@ -16661,6 +16773,15 @@ exit 0
 #        apply_customer_exits(answer.get("customer_exits"))
 #    except Exception as e:
 #        log_exception("customers' exits not applied: %s" % e)
+#    # Auto-transport switch, as the admin set it in the panel.
+#    try:
+#        want_auto = "1" if answer.get("auto_transport") else "0"
+#        if CFG.get("AUTO_TRANSPORT") != want_auto:
+#            set_sync_env({"AUTO_TRANSPORT": want_auto})
+#            CFG["AUTO_TRANSPORT"] = want_auto
+#            log(INFO, "auto-transport %s" % ("on" if want_auto == "1" else "off"))
+#    except Exception as e:
+#        log(WARN, "auto-transport flag not kept: %s" % e)
 #    try:
 #        apply_tunnel(answer.get("tunnel"))
 #    except Exception as e:
@@ -16914,7 +17035,7 @@ exit 0
 # padding:12px max(18px,calc((100vw - 1060px) / 2));background:color-mix(in srgb,var(--bg) 78%,transparent);
 # backdrop-filter:blur(18px) saturate(1.4);border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
 #.top .brand{position:static;display:flex;align-items:center;gap:10px;margin:0;font-size:22px;line-height:1}
-#.top .brand .mark{width:30px;height:30px}.top .brand .name{font-size:22px}
+#.top .brand .mark{width:30px;height:30px}.top .brand .name{font-size:22px;letter-spacing:.06em;font-weight:900}
 #.brand .mark{display:inline-block;flex:none;width:1em;height:1em;animation:hd-float 4s ease-in-out infinite}
 #.brand .mark svg{display:block;width:100%;height:100%}
 #.brand .name{font-weight:800;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));background-size:200% auto;
@@ -17192,8 +17313,8 @@ exit 0
 #.brand .mark{display:inline-block;width:34px;height:34px;vertical-align:middle;margin-right:10px;
 # animation:hd-float 4s ease-in-out infinite}
 #.brand .mark svg{display:block;width:100%;height:100%}
-#.brand .name{display:inline-block;vertical-align:middle;font-size:clamp(32px,10vw,42px);
-# font-weight:800;letter-spacing:1.5px;color:var(--accent);
+#.brand .name{display:inline-block;vertical-align:middle;font-size:clamp(34px,10vw,46px);
+# font-weight:900;letter-spacing:2.5px;color:var(--accent);
 # background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;
 # background-clip:text;-webkit-text-fill-color:transparent}
 #footer{text-align:center;color:var(--faint);font-size:12px;padding:16px 0 0;direction:ltr}
@@ -17234,7 +17355,7 @@ exit 0
 #
 #def brand_html():
 #    return ("<div class='brand'><span class='mark'>%s</span>"
-#            "<span class='name'>hunter dns</span></div>" % LOGO_SVG)
+#            "<span class='name'>Hunter DNS</span></div>" % LOGO_SVG)
 #
 #
 #def footer_html():
@@ -23128,6 +23249,87 @@ exit 0
 #    return "hunterdns_tunnel_" + ip.replace(".", "_")
 #
 #
+#def apply_auto_transport_on_exit(store, relay_ip, transport):
+#    """Match the transport the relay auto-switched to, on this exit."""
+#    transport = str(transport or "").strip()
+#    if not transport or not re.fullmatch(r"[a-z0-9]+", transport):
+#        return
+#    # Panel-managed tunnel for this relay.
+#    try:
+#        spec = json.loads(store.setting("relay_tunnel:" + relay_ip) or "{}")
+#    except ValueError:
+#        spec = {}
+#    if isinstance(spec, dict) and spec.get("transport") and spec.get("transport") != transport:
+#        direction = spec.get("direction") or "reverse"
+#        allowed = TUNNEL_TRANSPORTS.get(direction) or ()
+#        if transport in allowed:
+#            spec = dict(spec, transport=transport)
+#            store.set_setting("relay_tunnel:" + relay_ip,
+#                              json.dumps(spec, ensure_ascii=False, sort_keys=True))
+#            why = apply_exit_tunnel(relay_ip)
+#            log(INFO if not why else WARN,
+#                "auto-transport: exit matched %s for relay %s%s"
+#                % (transport, relay_ip, (": " + why) if why else ""))
+#            return
+#    # Installer tunnel (first relay): rewrite the shared tunnel.toml.
+#    mine = installer_tunnel()
+#    if not mine or mine.get("relay") != relay_ip:
+#        return
+#    if mine.get("transport") == transport:
+#        return
+#    direction = mine.get("direction") or "reverse"
+#    allowed = TUNNEL_TRANSPORTS.get(direction) or ()
+#    if transport not in allowed:
+#        return
+#    toml = "/etc/hunter-dns/tunnel/tunnel.toml"
+#    try:
+#        with open(toml, encoding="utf-8") as fh:
+#            body = fh.read()
+#    except OSError:
+#        return
+#    if "transport = " in body:
+#        body2 = re.sub(r'(transport\s*=\s*")[^"]*(")', r"\g<1>%s\2" % transport, body, count=1)
+#    elif "carrier = " in body:
+#        body2 = re.sub(r'(carrier\s*=\s*")[^"]*(")', r"\g<1>%s\2" % transport, body, count=1)
+#    else:
+#        return
+#    if body2 == body:
+#        return
+#    try:
+#        with open(toml + ".tmp", "w", encoding="utf-8") as fh:
+#            fh.write(body2)
+#        os.chmod(toml + ".tmp", 0o600)
+#        os.replace(toml + ".tmp", toml)
+#    except OSError as e:
+#        log(WARN, "auto-transport: could not write exit tunnel.toml: %s" % e)
+#        return
+#    # Keep panel.env in step so the next installer re-run sees it.
+#    try:
+#        env_path = "/etc/hunter-dns/panel.env"
+#        lines = []
+#        if os.path.exists(env_path):
+#            with open(env_path, encoding="utf-8") as fh:
+#                lines = fh.read().splitlines()
+#        out, seen = [], False
+#        for line in lines:
+#            if line.startswith("TUNNEL_TRANSPORT="):
+#                out.append("TUNNEL_TRANSPORT=" + transport)
+#                seen = True
+#            else:
+#                out.append(line)
+#        if not seen:
+#            out.append("TUNNEL_TRANSPORT=" + transport)
+#        with open(env_path + ".tmp", "w", encoding="utf-8") as fh:
+#            fh.write("\n".join(out) + "\n")
+#        os.replace(env_path + ".tmp", env_path)
+#    except OSError:
+#        pass
+#    subprocess.run(["systemctl", "restart", "hunterdns-tunnel.service"],
+#                   capture_output=True, timeout=60)
+#    log(INFO, "auto-transport: installer tunnel on exit now %s (relay %s)"
+#        % (transport, relay_ip))
+#
+#
 #def apply_exit_tunnel(ip):
 #    """This exit's end of the tunnel to one relay, as the panel has it set:
 #    running, or gone. "" or why not."""
@@ -24967,7 +25169,7 @@ exit 0
 #.brand .name{background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));background-size:200% auto;
 # -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:hd-flow 6s linear infinite}
 #.side .brand .mark{width:30px;height:30px}
-#.side .brand .name{font-size:19px;letter-spacing:.01em}
+#.side .brand .name{font-size:20px;letter-spacing:.06em;font-weight:900}
 #.side nav{display:flex;flex-direction:column;flex-wrap:nowrap;gap:2px;flex:1;min-height:0;overflow-y:auto;margin:0 -4px;padding:2px 4px;
 # scrollbar-width:none;-ms-overflow-style:none}
 #.side nav::-webkit-scrollbar{display:none}
@@ -25402,8 +25604,8 @@ exit 0
 #h3.sec:first-of-type{margin-top:6px}
 #.brand{text-align:center;margin:0 0 18px;direction:ltr;line-height:1.15}
 #.brand .mark{font-size:clamp(28px,6vw,38px);vertical-align:middle;margin-right:10px}
-#.brand .name{display:inline-block;vertical-align:middle;font-size:clamp(34px,8vw,50px);
-# font-weight:800;letter-spacing:1.5px;color:var(--accent);
+#.brand .name{display:inline-block;vertical-align:middle;font-size:clamp(36px,8vw,52px);
+# font-weight:900;letter-spacing:2.5px;color:var(--accent);
 # background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;
 # background-clip:text;-webkit-text-fill-color:transparent}
 #footer{text-align:center;color:var(--faint);font-size:12px;padding:26px 0 6px;direction:ltr}
@@ -25530,7 +25732,7 @@ exit 0
 #
 #def brand_html():
 #    return ("<div class='brand'><span class='mark'>%s</span>"
-#            "<span class='name'>hunter dns</span></div>" % LOGO_SVG)
+#            "<span class='name'>Hunter DNS</span></div>" % LOGO_SVG)
 #
 #
 #def footer_html():
@@ -27452,7 +27654,7 @@ exit 0
 #    "node-add": "nodes", "node-del": "nodes", "relay-add": "nodes", "relay-del": "nodes",
 #    "single-add": "nodes", "relay-exit": "nodes", "relay-tunnel": "nodes", "cap-save": "nodes",
 #    "upgrade-start": "nodes", "upgrade-stop": "nodes", "update-check": "settings",
-#    "public-dns": "settings", "server-list-save": "nodes", "seller-server-notes": ANYONE,
+#    "public-dns": "settings", "auto-transport": "settings", "server-list-save": "nodes", "seller-server-notes": ANYONE,
 #    "dns-bench": "settings", "dns-upstream": "settings", "doh-name": "settings",
 #    "telegram-required": "settings", "portal-open": "settings", "calendar-save": "settings", "watch-start": "logs", "diagnose-start": "logs",
 #    "me-password": ANYONE, "view-as-stop": ANYONE}
@@ -30461,6 +30663,20 @@ exit 0
 #        out.append(upstream_card())
 #        out.append(doh_name_card(p))
 #
+#        auto_on = setting("auto_transport") == "1"
+#        out.append(
+#            "<div class='card'><h2>سوییچ خودکار ترنسپورت</h2>"
+#            "<form method='post' action='/%s/auto-transport'><label style='display:inline'>"
+#            "<input type='checkbox' name='on' value='1'%s> وقتی تونل بین رله و سرور خارج "
+#            "برای حدود دو دقیقه قطع بماند، ترنسپورت بعدی را امتحان کن "
+#            "(اول kcp، بعد pck، بعد بقیه)</label> "
+#            "<button class='ghost'>ذخیره</button></form>"
+#            "<p class='muted'>روشن باشد، رله خودش ترنسپورت را عوض می‌کند و سرور خارج هم "
+#            "همان را می‌گیرد تا دو سر با هم بمانند. بین هر سوییچ سه دقیقه فاصله است تا "
+#            "تونل بی‌جهت بالا و پایین نشود. اگر همهٔ ترنسپورت‌ها یک دور امتحان شدند، "
+#            "دیگر عوض نمی‌کند تا خودتان دستی تنظیم کنید.</p></div>"
+#            % (p, " checked" if auto_on else ""))
+#
 #        out.append("<div class='card'><h2>نشانی همین پنل</h2><p class='muted'>نشانی "
 #                   "فعلی: <code>https://%s:%s/%s/</code></p><div class='f'><label>پورت</label><form method='post' action='/%s/panel-port' class='row'><input name='port' value='%s' size='6'><button class='ghost'>تغییر "
 #                   "پورت</button></form></div><div class='f'><label>مسیر "
@@ -32144,6 +32360,15 @@ exit 0
 #                if (setting(key) or "") != note:
 #                    put_setting(key, note)
 #            return self.redirect("me?m=توضیح سرورها ذخیره شد")
+#
+#        if rest == "auto-transport":
+#            on = one("on") == "1"
+#            put_setting("auto_transport", "1" if on else "0")
+#            log(INFO, "auto-transport %s" % ("on" if on else "off"))
+#            return self.redirect("settings?m=%s" % (
+#                "سوییچ خودکار ترنسپورت روشن شد؛ رله‌ها تا یک دقیقه دیگر می‌گیرند"
+#                if on else
+#                "سوییچ خودکار ترنسپورت خاموش شد"))
 #
 #        if rest == "public-dns":
 #            on = one("to") == "1"
