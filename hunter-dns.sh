@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.0"
+VERSION="0.1.1"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -35667,18 +35667,20 @@ exit 0
 #
 #
 ## The buttons of the customer's keyboard.
-#B_ACCOUNT = "📊 حساب من"
-#B_BUY = "🛒 خرید / تمدید"
-#B_IP = "🌐 ثبت آی‌پی"
+#B_ACCOUNT = "📦 پلن من"
+#B_BUY = "🛒 خرید سرویس"
+#B_IP = "🟠 ثبت آیپی"
 #B_SUPPORT = "🎫 پشتیبانی"
-#B_HELP = "❓ راهنما"
+#B_HELP = "📖 راهنمای ست کردن"
 #B_WEB = "🔑 پنل وب"
 #B_DNS = "📡 DNSها"
 #B_WALLET = "💰 کیف پول"
-#B_INVITE = "🎁 دعوت از دوستان"
+#B_INVITE = "🤝 دعوت دوستان"
+#B_TRIAL = "🎁 تست ۲۴ ساعته"
 #B_CANCEL = "انصراف"
-#MENU = {"keyboard": [[B_ACCOUNT, B_BUY], [B_WALLET, B_INVITE], [B_IP, B_DNS],
-#                     [B_SUPPORT, B_WEB], [B_HELP]],
+## قالب منوی مشتری — همان چیدمان ربات Hunter DNS (قالب اختصاصی اپراتور)
+#MENU = {"keyboard": [[B_IP, B_BUY], [B_WALLET, B_ACCOUNT],
+#                     [B_TRIAL, B_SUPPORT], [B_HELP, B_INVITE]],
 #        "resize_keyboard": True}
 #CANCEL = {"keyboard": [[B_CANCEL]], "resize_keyboard": True}
 #STATUS = {"pending": "در انتظار خرید پلن", "active": "فعال ✅",
@@ -36170,7 +36172,7 @@ exit 0
 #        self.back = {}
 #        if self.en:
 #            for label in (B_ACCOUNT, B_BUY, B_WALLET, B_INVITE, B_IP, B_SUPPORT, B_HELP, B_WEB,
-#                          B_DNS,
+#                          B_DNS, B_TRIAL,
 #                          B_CANCEL):
 #                self.back[to_english(label)] = label
 #        self.known = set()       # telegram ids the panel already has an account for
@@ -36261,7 +36263,8 @@ exit 0
 #            return self.got_username(chat, sender, text, extra)
 #        if text in ("/doh", "/dns"):
 #            text = B_DNS
-#        if text in (B_ACCOUNT, B_BUY, B_WALLET, B_INVITE, B_IP, B_DNS, B_SUPPORT, B_WEB) \
+#        if text in (B_ACCOUNT, B_BUY, B_WALLET, B_INVITE, B_IP, B_DNS, B_SUPPORT, B_WEB,
+#                    B_TRIAL, B_HELP) \
 #                and not self.ready(chat, sender):
 #            return
 #        if waiting == "ip":
@@ -36304,6 +36307,8 @@ exit 0
 #            return self.show_dns(chat, sender)
 #        if text == B_SUPPORT:
 #            return self.show_tickets(chat, sender)
+#        if text == B_TRIAL:
+#            return self.take_trial(chat, sender)
 #        if text == B_HELP:
 #            return self.say(chat, self.help_text(), MENU)
 #        return self.say(chat, "از دکمه‌های پایین استفاده کنید.", MENU)
@@ -36604,14 +36609,15 @@ exit 0
 #            self.send_wg(chat, c)
 #
 #    def help_text(self):
-#        return ("📊 حساب من: وضعیت، حجم مانده و روزهای باقی‌مانده\n"
-#                "🛒 خرید / تمدید: انتخاب پلن و فرستادن رسید\n"
+#        return ("🟠 ثبت آیپی: سرویس فقط روی آی‌پی ثبت‌شده کار می‌کند\n"
+#                "🛒 خرید سرویس: انتخاب پلن و فرستادن رسید\n"
 #                "💰 کیف پول: موجودی و شارژ\n"
-#                "🎁 دعوت از دوستان: لینک دعوت و پورسانت\n"
-#                "🌐 ثبت آی‌پی: سرویس فقط روی آی‌پی ثبت‌شده کار می‌کند\n"
+#                "📦 پلن من: وضعیت، حجم مانده و روزهای باقی‌مانده\n"
+#                "🎁 تست ۲۴ ساعته: دریافت تست رایگان (در صورت فعال بودن)\n"
 #                "🎫 پشتیبانی: تیکت و گفتگو با پشتیبانی\n"
-#                "📡 DNSها: آدرس DNS معمولی، DoH و DoT\n"
-#                "🔑 پنل وب: نام کاربری، ورود با یک کلیک و رمز تازه\n\n"
+#                "📖 راهنمای ست کردن: همین راهنما\n"
+#                "🤝 دعوت دوستان: لینک دعوت و پورسانت\n\n"
+#                "DNS و پنل وب را از «📦 پلن من» می‌بینید.\n"
 #                "حساب پنل وب دارید؟ در پنل «اتصال حساب به تلگرام» را بزنید و کد را "
 #                "همین‌جا بفرستید." + ("\n\n" + self.cfg["support"] if self.cfg["support"] else ""))
 #
@@ -36639,12 +36645,13 @@ exit 0
 #                         % "، ".join(u["reserved"]))
 #        if u["receipt_waiting"]:
 #            lines.append("\n⏳ یک رسید در انتظار بررسی دارید.")
+#        rows = [[{"text": "📡 DNSها", "callback_data": "dns"},
+#                 {"text": "🔑 پنل وب", "callback_data": "login"}]]
 #        offer = u.get("device_offer")
 #        if offer and offer.get("available"):
-#            return self.say(chat, "\n".join(lines), {"inline_keyboard": [[
-#                {"text": "📱 دستگاه اضافه — %s تومان" % money(offer["price"]),
-#                 "callback_data": "dev"}]]})
-#        self.say(chat, "\n".join(lines), MENU)
+#            rows.append([{"text": "📱 دستگاه اضافه — %s تومان" % money(offer["price"]),
+#                          "callback_data": "dev"}])
+#        self.say(chat, "\n".join(lines), {"inline_keyboard": rows})
 #
 #    def show_device(self, chat, sender):
 #        u = self.account(sender)
@@ -36660,6 +36667,17 @@ exit 0
 #        self.say(chat, "📱 دستگاه اضافه\nالان %d دستگاه دارید؛ هر دستگاه اضافه %s تومان، تا "
 #                 "وقتی همین پلن را تمدید کنید." % (offer["devices"], money(offer["price"])),
 #                 {"inline_keyboard": rows})
+#
+#    def take_trial(self, chat, sender):
+#        """دکمهٔ تست ۲۴ ساعته — همان جریان callback trial."""
+#        try:
+#            self.account(sender)
+#            res = self.panel.call("POST", "/users/%d/trial" % sender["id"])
+#            self.say(chat, "✅ " + res.get("message", "تست رایگان فعال شد."), MENU)
+#            if not (res.get("user") or {}).get("ips"):
+#                return self.ip_help(chat, sender)
+#        except ApiError as e:
+#            return self.say(chat, "⚠️ " + str(e), MENU)
 #
 #    def show_plans(self, chat, sender):
 #        u = self.account(sender)
@@ -37009,6 +37027,8 @@ exit 0
 #            if not res["user"]["ips"]:
 #                return self.ip_help(chat, sender)
 #            return None
+#        if kind == "dns":
+#            return self.show_dns(chat, sender)
 #        if kind == "tk":
 #            return self.show_ticket(chat, sender, int(arg))
 #        if kind == "tknew":
