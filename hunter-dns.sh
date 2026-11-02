@@ -14546,28 +14546,46 @@ exit 0
 #
 #
 #def run_watch(job):
-#    """Run hunterdns-watch for the panel, for as long as it asked, and keep
-#    what it printed for the next sync. In its own thread: it takes minutes,
-#    and the syncs must go on meanwhile."""
+#    """Collect structured DNS observations by customer IP for the home page."""
 #    target = str(job.get("target") or "")
 #    try:
 #        seconds = max(10, min(300, int(job.get("seconds") or 60)))
 #    except (TypeError, ValueError):
 #        seconds = 60
 #    if target and not re.fullmatch(r"[A-Za-z0-9._@-]{1,40}", target):
-#        WATCH_DONE["result"] = {"id": job["id"], "text": "not a customer or address: %r"
-#                                % target[:40]}
+#        WATCH_DONE["result"] = {"id": job["id"], "text": "not a customer or address: %r" % target[:40]}
 #        return
-#    # timeout(1) ends it with SIGTERM, which hunterdns-watch turns into its
-#    # summary line - a kill would lose that.
-#    cmd = ["timeout", str(seconds), WATCH] + ([target] if target else [])
 #    try:
-#        r = subprocess.run(cmd, capture_output=True, text=True, timeout=seconds + 30)
-#        text = (r.stdout + ("\n" + r.stderr if r.stderr.strip() else "")).strip()
+#        acl = subprocess.run([ACL, "list", "--json"], capture_output=True,
+#                             text=True, timeout=20)
+#        entries = json.loads(acl.stdout) if acl.returncode == 0 else []
+#        targets = set()
+#        for entry in entries if isinstance(entries, list) else []:
+#            ip = str(entry.get("ip") or "") if isinstance(entry, dict) else ""
+#            label = " ".join(str(entry.get(k) or "") for k in ("name", "username", "label")) if isinstance(entry, dict) else ""
+#            if ip and (not target or target.lower() in (ip + " " + label).lower()):
+#                targets.add(ip)
+#        if not targets:
+#            text = "هیچ IP مجازی برای پایش روی این رله پیدا نشد."
+#        else:
+#            cmd = ["timeout", str(seconds), WATCH, "--json"] + sorted(targets)
+#            r = subprocess.run(cmd, capture_output=True, text=True, timeout=seconds + 30)
+#            by_ip = {}
+#            for line in r.stdout.splitlines():
+#                try:
+#                    item = json.loads(line)
+#                    ip, service = str(item.get("ip") or ""), str(item.get("service") or "Other / unclassified")
+#                    if ip and service != "Other / unclassified":
+#                        by_ip.setdefault(ip, set()).add(service)
+#                except (ValueError, AttributeError):
+#                    continue
+#            text = json.dumps({"by_ip": {ip: sorted(v) for ip, v in by_ip.items()}}, ensure_ascii=False)
+#            if r.returncode not in (0, 124) and not by_ip:
+#                text = (r.stderr or "hunterdns-watch failed")[-2000:]
 #    except Exception as e:
 #        text = "hunterdns-watch: %s" % e
 #    if len(text) > WATCH_MAX:
-#        text = "... (only the end)\n" + text[-WATCH_MAX:]
+#        text = text[-WATCH_MAX:]
 #    WATCH_DONE["result"] = {"id": job["id"], "text": text or "(nothing seen)"}
 #
 #
@@ -24338,8 +24356,28 @@ exit 0
 #    return sorted(out, key=lambda x: x["down_bps"] + x["up_bps"], reverse=True)
 #
 #
+#def online_service_map():
+#    """Latest completed monitor result, grouped by registered customer IP."""
+#    try:
+#        job_row = STORE.one("SELECT value FROM settings WHERE key = 'watch_job'")
+#        job = json.loads(job_row["value"] if job_row else "null")
+#    except (TypeError, ValueError, KeyError):
+#        job = None
+#    if not isinstance(job, dict) or not job.get("id"):
+#        return {}
+#    found = {}
+#    for result in STORE.q("SELECT text FROM watch_results WHERE job_id = ?", (job["id"],)):
+#        try:
+#            data = json.loads(result["text"])
+#            for ip, services in (data.get("by_ip") or {}).items():
+#                found.setdefault(ip, set()).update(str(x) for x in services if x)
+#        except (ValueError, TypeError, AttributeError):
+#            continue
+#    return found
+#
+#
 #def online_card(p, rows, show_seller=False, most=100):
-#    """The home page's customers online now."""
+#    """The home page's customers online now, including the latest service scan."""
 #    out = ["<div class='card' id='online'><h2>🟢 آنلاین الان (%d)</h2>" % len(rows)]
 #    if not rows:
 #        out.append("<p class='muted'>در این لحظه هیچ‌کس آنلاین نیست.</p>")
@@ -24348,28 +24386,35 @@ exit 0
 #        if show_seller:
 #            sellers = {a["id"]: a["username"] for a in STORE.q(
 #                "SELECT id, username FROM admins WHERE own_only = 1")}
+#        service_map = online_service_map()
+#        user_ips = {}
+#        for ip_row in STORE.q("SELECT user_id, ip FROM ips"):
+#            user_ips.setdefault(ip_row["user_id"], set()).add(ip_row["ip"])
 #        out.append("<table><tr><th>مشتری</th><th>سرور</th>%s<th>سرعت، ۱۰ دقیقهٔ اخیر</th>"
-#                   "<th>آخرین ترافیک</th></tr>" % ("<th>فروشنده</th>" if show_seller else ""))
+#                   "<th>سرویس‌های شناسایی‌شده</th><th>آخرین ترافیک</th></tr>" % ("<th>فروشنده</th>" if show_seller else ""))
 #        for r in rows[:most]:
+#            services = sorted(set().union(*(service_map.get(ip, set()) for ip in user_ips.get(r["id"], set()))))
+#            service_html = "<span class='muted'>هنوز شناسایی نشده</span>" if not services else " ".join(
+#                "<span class='pill ok'>%s</span>" % html.escape(x) for x in services)
 #            who = str(r["username"] or r["phone"] or r["telegram_id"] or "#%d" % r["id"])
 #            server = r["last_server"] or ""
 #            out.append(
 #                "<tr><td><span class='dot on'></span><a href='/%s/usage?u=%d'>%s</a>"
 #                " <span class='muted'>%s</span></td>"
 #                "<td>%s</td>%s<td class='muted'><span dir='ltr'>↓%s/s ↑%s/s</span></td>"
-#                "<td class='muted'>%s</td></tr>"
+#                "<td>%s</td><td class='muted'>%s</td></tr>"
 #                % (p, r["id"], html.escape(who), html.escape(r["first_name"] or ""),
 #                   html.escape(server_label(server)) if server else "—",
 #                   "<td>%s</td>" % html.escape(sellers.get(r["owner_admin"], "—"))
 #                   if show_seller else "",
 #                   human(r["down_bps"] // 8), human(r["up_bps"] // 8),
-#                   html.escape(ago(r["last_seen"]))))
+#                   service_html, html.escape(ago(r["last_seen"]))))
 #        out.append("</table>")
 #        if len(rows) > most:
 #            out.append("<p class='muted'>و %d نفر دیگر.</p>" % (len(rows) - most))
-#    out.append("<p class='muted'>«آنلاین» یعنی در ۳ دقیقهٔ گذشته از مسیر رله ترافیک داشته است. فقط "
-#               "سرویس‌هایی که قالبش از رله می‌برد شمرده می‌شوند؛ کسی که فقط چیزهای دیگر را باز کرده "
-#               "این‌جا نمی‌آید.</p></div>")
+#    out.append("<p class='muted'>«آنلاین» یعنی در ۳ دقیقهٔ گذشته از مسیر رله ترافیک داشته است. سرویس‌ها "
+#               "از آخرین پایش تکمیل‌شده و بر اساس دامنه‌های DNS ثبت‌شده‌اند؛ این مورد اثبات اتصال فعال "
+#               "به سرور بازی نیست. برای به‌روزرسانی، مانیتورینگ را دوباره اجرا کنید.</p></div>")
 #    return "".join(out)
 #
 #
@@ -27216,7 +27261,7 @@ exit 0
 #        age = (datetime.now(timezone.utc) - asked).total_seconds() if asked else 1e9
 #        results = STORE.q("SELECT * FROM watch_results WHERE job_id = ? ORDER BY relay",
 #                          (job.get("id"),))
-#        waiting = age < int(job.get("seconds") or 60) + 120 and not results
+#        waiting = age < int(job.get("seconds") or 60) + 180
 #        out.append("<p>درخواست برای <b>%s</b>، %d ثانیه — %s%s</p>" % (
 #            html.escape(job.get("target") or "همهٔ مشتری‌ها"), int(job.get("seconds") or 60),
 #            html.escape(ago(job.get("asked_at"))),
@@ -34476,10 +34521,9 @@ exit 0
 #
 #    def report(self, client, name, verdict, via=""):
 #        if self.as_json:
-#            # Every answer, not only the changes: the one keeping the report
-#            # counts them, and a name asked again is news to it.
+#            # Structured per-client observations are aggregated by the panel.
 #            self.out(json.dumps({"t": int(self.clock()), "ip": client,
-#                                 "name": name, "v": verdict}))
+#                                 "name": name, "service": service_for(name), "v": verdict}))
 #            return
 #        kind = "direct" if verdict.startswith("direct") else verdict
 #        if self.shown.get((client, name, via)) == kind:
