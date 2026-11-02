@@ -27202,17 +27202,15 @@ exit 0
 #                         ["value"] or "null")
 #    except (TypeError, ValueError):
 #        job = None
-#    out = ["<div id='watch'></div><div class='card'><h2>دامنه‌هایی که مشتری باز "
-#           "می‌کند <span class='muted'>(hunterdns-watch)</span></h2><p class='muted'>برای کشف "
-#           "دامنه‌های مورد نیاز یک سرویس: یک مشتری را انتخاب کنید، دکمه را بزنید و از او بخواهید در "
-#           "همین بازه سرویسِ ناکار را باز کند. «via relay» یعنی از سرور رد شد، «direct» یعنی مستقیم "
-#           "رفت (اگر سرویس ایران را قبول نمی‌کند، همین دامنه‌ها را در صفحهٔ دامنه‌ها اضافه کنید)، "
-#           "«filtered» یعنی فیلتر خود ایران است. کوئری‌های DoH و DoT هم دیده می‌شوند، با "
-#           "علامت (DOH) یا (DOT) جلویشان.</p><form method='post' action='/%s/watch-start' class='row'><input name='target' dir='ltr' placeholder='نام "
-#           "کاربری یا "
-#           "آی‌پی (خالی = همه)' maxlength='40' style='min-width:220px'><select name='seconds'><option value='60'>۱ "
-#           "دقیقه</option><option value='120' selected>۲ دقیقه</option><option value='300'>۵ "
-#           "دقیقه</option></select><button>شروع</button></form>" % p]
+#    out = ["<div id='watch'></div><div class='card'><h2>مانیتور زنده سرویس مشتری‌ها "
+#           "<span class='muted'>(Live Connection Monitor)</span></h2><p class='muted'>این ابزار "
+#           "درخواست‌های DNS مشتری‌های ثبت‌شده را روی همهٔ رله‌ها بررسی می‌کند و نام دامنه‌ها را "
+#           "نمایش می‌دهد تا بتوان سرویس‌هایی مثل EA، Epic Games، Steam، PlayStation و Xbox را "
+#           "تشخیص داد. برای پایش همهٔ مشتری‌ها، فیلد مشتری را خالی بگذارید. این پایش فقط نام دامنه، "
+#           "آی‌پی مشتری و مسیر پاسخ DNS را می‌بیند؛ محتوای ارتباطات رمزگذاری‌شده را نمی‌خواند. "
+#           "DoH و DoT نیز در صورت پشتیبانی رله و فعال بودن watcher نمایش داده می‌شوند. «via relay» "
+#           "یعنی از رله عبور کرده و «direct» یعنی مستقیم پاسخ گرفته است. تشخیص سرویس بر اساس دامنه "
+#           "است و ممکن است به‌خاطر CDN مشترک قطعی نباشد.</p><form method='post' action='/%s/watch-start' class='row'><input name='target' dir='ltr' placeholder='خالی بگذارید: همه مشتری‌ها' maxlength='40' style='min-width:220px'><select name='seconds'><option value='60'>۱ دقیقه</option><option value='120'>۲ دقیقه</option><option value='300' selected>۵ دقیقه</option></select><button>شروع مانیتورینگ همه مشتری‌ها</button></form>" % p]
 #    if job:
 #        asked = parse_ts(job.get("asked_at"))
 #        age = (datetime.now(timezone.utc) - asked).total_seconds() if asked else 1e9
@@ -29592,6 +29590,12 @@ exit 0
 #                                   show_seller=seller() is None
 #                                   and bool(STORE.one("SELECT 1 FROM admins WHERE own_only = 1"))))
 #        s = seller()
+#        if s is None and may("nodes"):
+#            def watch_pre(text):
+#                return ("<pre dir='ltr' style='overflow-x:auto;font-size:12px;color:var(--dim);"
+#                        "white-space:pre-wrap;max-height:45vh;overflow-y:auto'>%s</pre>"
+#                        % html.escape(text))
+#            out.append(watch_card(watch_pre))
 #        if s is not None:
 #            # Their own customers' usage, drawn as the owner's home page draws
 #            # everybody's.
@@ -34363,6 +34367,33 @@ exit 0
 #DEMONWARE_DIRECT = re.compile(r"(^|\.)(lsg|loginservice)\.|(^|\.)stun\.|^genesis")
 #
 #
+#def service_for(name):
+#    """Best-effort company/game label from the DNS name, never an IP guess."""
+#    n = str(name or "").lower().rstrip(".")
+#    groups = (
+#        ("EA / Apex / EA SPORTS FC", ("ea.com", "ea.com.cn", "eafc.com", "easports.com",
+#         "electronicarts.com", "eaplay.com", "apexlegends.com", "battlefield.com",
+#         "origin.com", "eacdn.com", "fcmobile.com")),
+#        ("Epic Games / Fortnite", ("epicgames.com", "epicgames.net", "epicgames.dev",
+#         "fortnite.com", "rocketleague.com", "fallguys.com", "psyonix.com")),
+#        ("Steam / Valve", ("steampowered.com", "steamcommunity.com", "steamgames.com",
+#         "steamcontent.com", "steamstatic.com", "valvesoftware.com", "counter-strike.net",
+#         "dota2.com")),
+#        ("PlayStation Network", ("playstation.net", "playstation.com", "sonyentertainmentnetwork.com")),
+#        ("Xbox / Microsoft Gaming", ("xboxlive.com", "xbox.com", "xboxservices.com",
+#         "xboxab.com", "xboxgamestudios.com")),
+#        ("Ubisoft", ("ubisoft.com", "ubi.com", "ubisoftconnect.com")),
+#        ("Riot Games / VALORANT / LoL", ("riotgames.com", "leagueoflegends.com",
+#         "valorant.com", "riotcdn.net")),
+#        ("Call of Duty / Activision", ("activision.com", "callofduty.com", "demonware.net")),
+#        ("Nintendo", ("nintendo.com", "nintendo.net")),
+#    )
+#    for label, suffixes in groups:
+#        if any(n == d or n.endswith("." + d) for d in suffixes):
+#            return label
+#    return "Other / unclassified"
+#
+#
 #class Watcher:
 #    """Pairs each question with its answer and prints a line per name.
 #
@@ -34458,8 +34489,9 @@ exit 0
 #        stamp = time.strftime("%H:%M:%S", time.localtime(self.clock()))
 #        who = "" if self.targets and len(self.targets) == 1 else \
 #            "%-14s " % self.who.get(client, client)[:14]
-#        self.out("%s  %s%-44s %s%s" % (stamp, who, name, verdict,
-#                                          "   (%s)" % via if via else ""))
+#        service = service_for(name)
+#        self.out("%s  %s[%-28s] %-44s %s%s" % (
+#            stamp, who, service[:28], name, verdict, "   (%s)" % via if via else ""))
 #
 #    def hints(self):
 #        """Lines worth a look, from what was seen, or [].
