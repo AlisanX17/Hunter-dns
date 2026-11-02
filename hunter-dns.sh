@@ -17328,7 +17328,20 @@ exit 0
 #.theme .sun{display:var(--sun)}.theme .moon{display:var(--moon)}
 #.theme.lang{left:auto;right:14px;font-size:12px;font-weight:700;letter-spacing:.5px}
 #html[lang=en] .fa-only,html:not([lang=en]) .en-only{display:none}
-#""" + FX_CSS + HD2_USER_CSS
+#""" + FX_CSS + HD2_USER_CSS + """
+#/* Hunter DNS performance profile: reduce expensive GPU compositing */
+#*,*::before,*::after{scroll-behavior:auto!important}
+#body::before,body::after{display:none!important}
+#.card,.stat,.panel,.box,.modal,.menu,.dropdown,.tools,.side,header,.topbar,.top,
+#.msg,.toast{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+#.card,.stat,.panel,.box,.modal,.menu,.dropdown,.tools,.side,header,.topbar,.top,
+#.msg,.toast{box-shadow:0 4px 14px rgba(0,0,0,.14)!important}
+#.card,.stat,.panel,.box,.modal,.menu,.dropdown,.tools,.side,header,.topbar,.top,
+#.msg,.toast,nav a,button,a.btn,input,select,textarea{animation:none!important;transition:none!important}
+#.card:hover,.stat:hover,.panel:hover{transform:none!important;box-shadow:0 4px 14px rgba(0,0,0,.14)!important}
+#.tile:hover,nav a:hover,button:hover,a.btn:hover{transform:none!important;filter:none!important}
+#@media(prefers-reduced-motion:no-preference){html{scroll-behavior:auto!important}}
+#"""
 #
 ## Where the installer writes the version it installed. Read per page rather
 ## than once, so it can never disagree with what is on disk.
@@ -25672,7 +25685,20 @@ exit 0
 #@media(max-width:700px){.card,.stat,.panel,section.card{border-radius:19px!important;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}header,.topbar{border-radius:19px!important}.wrap{padding-inline:12px}}
 #@media(prefers-reduced-motion:reduce){.card,.stat,.panel{animation:none!important;transition:none!important}}
 #/* ==== end Liquid Glass refinement ==== */
-#""" + FX_CSS + HD2_ADMIN_CSS
+#""" + FX_CSS + HD2_ADMIN_CSS + """
+#/* Hunter DNS performance profile: reduce expensive GPU compositing */
+#*,*::before,*::after{scroll-behavior:auto!important}
+#body::before,body::after{display:none!important}
+#.card,.stat,.panel,.box,.modal,.menu,.dropdown,.tools,.side,header,.topbar,.top,
+#.msg,.toast{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+#.card,.stat,.panel,.box,.modal,.menu,.dropdown,.tools,.side,header,.topbar,.top,
+#.msg,.toast{box-shadow:0 4px 14px rgba(0,0,0,.14)!important}
+#.card,.stat,.panel,.box,.modal,.menu,.dropdown,.tools,.side,header,.topbar,.top,
+#.msg,.toast,nav a,button,a.btn,input,select,textarea{animation:none!important;transition:none!important}
+#.card:hover,.stat:hover,.panel:hover{transform:none!important;box-shadow:0 4px 14px rgba(0,0,0,.14)!important}
+#.tile:hover,nav a:hover,button:hover,a.btn:hover{transform:none!important;filter:none!important}
+#@media(prefers-reduced-motion:no-preference){html{scroll-behavior:auto!important}}
+#"""
 #
 ## Where the installer writes the version it installed. Read per page rather
 ## than once, so it can never disagree with what is on disk.
