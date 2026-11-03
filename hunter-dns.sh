@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.1"
+VERSION="0.1.2"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -942,8 +942,9 @@ case "${1:-}" in
         printf '                 (l3 is BackPack'"'"'s direct, as its menu makes it now)\n'
         printf '  TUNNEL_PORT=8444     the tunnel between relay and exit, asked on the exit\n'
         printf '  TUNNEL_PRESET=turbo  balance|turbo|aggressive|throughput - BackPack'"'"'s, or none\n'
-        printf '  ROLE=node PANEL_IP=<main exit> SYNC_TOKEN=<token>   another exit, joined to\n'
-        printf '                 that panel - the token is on its admin panel'"'"'s Node page\n'
+        printf '  ROLE=node PANEL_HOST=<main panel IP or domain> PANEL_API_CODE=<token>\n'
+        printf '                 another exit, joined to the central customer database\n'
+        printf '                 PANEL_IP and SYNC_TOKEN remain accepted for older commands\n'
         printf '  ROLE=single PANEL_IP=<main exit> SYNC_TOKEN=<token>   a single server in\n'
         printf '                 another country, its customers and quota those of that panel\n'
         printf '  BACKPACK_TARBALL=/path/backpack_linux_amd64.tar.gz   BackPack without GitHub\n'
@@ -1517,12 +1518,30 @@ fi
 
 # ---------------------------------------------------------------- questions
 valid_ip() {
-    local ip="$1" part
+    local ip="$1" part n
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
     IFS='.' read -r -a part <<< "$ip"
     for n in "${part[@]}"; do [ "$n" -le 255 ] || return 1; done
 }
 
+# A node can reach the central panel by its Cloudflare DNS-only hostname.
+# The node still keeps the resolved IPv4 separately for its server identity.
+valid_host() {
+    local h="$1" label
+    [ -n "$h" ] && [ "${#h}" -le 253 ] || return 1
+    [[ "$h" =~ ^[A-Za-z0-9.-]+$ ]] || return 1
+    [[ "$h" != .* && "$h" != *..* && "$h" != *. ]] || return 1
+    IFS='.' read -r -a labels <<< "$h"
+    for label in "${labels[@]}"; do
+        [ -n "$label" ] && [ "${#label}" -le 63 ] || return 1
+        [[ "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]] || return 1
+    done
+}
+
+# PANEL_API_CODE is the human-facing name for the existing pinned API pairing
+# token. Keep SYNC_TOKEN as a backward-compatible alias.
+SYNC_TOKEN="${SYNC_TOKEN:-${PANEL_API_CODE:-}}"
+PANEL_HOST="${PANEL_HOST:-${PANEL_IP:-}}"
 ROLE="${ROLE:-}"; PEER_IP="${PEER_IP:-}"; SELF_IP="${SELF_IP:-}"
 
 if [ -z "$ROLE" ]; then
@@ -1545,7 +1564,13 @@ fi
 [ "$ROLE" = relay ] || [ "$ROLE" = exit ] || [ "$ROLE" = single ] || [ "$ROLE" = node ] \
     || die "ROLE must be relay, exit, single or node"
 # A node's other end is the exit its panel is on.
-[ "$ROLE" = node ] && [ -z "$PEER_IP" ] && PEER_IP="${PANEL_IP:-}"
+if [ "$ROLE" = node ]; then
+    PANEL_HOST="${PANEL_HOST:-${PANEL_IP:-$PEER_IP}}"
+    if [ -n "$PANEL_HOST" ] && ! valid_ip "$PEER_IP"; then
+        if valid_ip "$PANEL_HOST"; then PEER_IP="$PANEL_HOST"
+        else PEER_IP="$(getent ahostsv4 "$PANEL_HOST" 2>/dev/null | awk 'NR==1 {print $1}')"; fi
+    fi
+fi
 SINGLE=""
 if [ "$ROLE" = single ]; then
     SINGLE=1
@@ -1568,7 +1593,16 @@ if [ -z "$PEER_IP" ] && [ "$ROLE" != single ]; then
         read -r -p "  public address of the RELAY server in Iran: " PEER_IP
     fi
 fi
-[ "$ROLE" = single ] || valid_ip "$PEER_IP" || die "'$PEER_IP' is not an IPv4 address"
+if [ "$ROLE" = node ]; then
+    PANEL_HOST="${PANEL_HOST:-${PANEL_IP:-$PEER_IP}}"
+    valid_host "$PANEL_HOST" || die "PANEL_HOST '$PANEL_HOST' is not a valid IPv4 address or DNS hostname"
+    if ! valid_ip "$PEER_IP"; then
+        PEER_IP="$(getent ahostsv4 "$PANEL_HOST" 2>/dev/null | awk 'NR==1 {print $1}')"
+    fi
+    [ -n "$PEER_IP" ] && valid_ip "$PEER_IP" || die "cannot resolve PANEL_HOST '$PANEL_HOST' to an IPv4 address; check its DNS A record"
+else
+    [ "$ROLE" = single ] || valid_ip "$PEER_IP" || die "'$PEER_IP' is not an IPv4 address"
+fi
 
 if [ -z "$SELF_IP" ]; then
     guess="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)"
@@ -1588,7 +1622,7 @@ if [ "$ROLE" = single ]; then
     RELAY_IP="$SELF_IP"; EXIT_IP="$SELF_IP"; PEER_IP="$SELF_IP"
     if [ -n "${PANEL_IP:-}" ] && [ "$PANEL_IP" != 127.0.0.1 ] && [ "$PANEL_IP" != "$SELF_IP" ]; then
         JOINED=1
-        valid_ip "$PANEL_IP" || die "PANEL_IP '$PANEL_IP' is not an IPv4 address"
+        valid_host "$PANEL_IP" || die "PANEL_HOST '$PANEL_IP' is not a valid IPv4 address or DNS hostname"
         if [ -z "${SYNC_TOKEN:-}" ] && [ -z "${ASSUME_YES:-}" ]; then
             printf '\n  The pairing token is on the admin panel'"'"'s Node page, on %s.\n' "$PANEL_IP"
             read -r -p "  pairing token: " SYNC_TOKEN
@@ -1600,7 +1634,7 @@ elif [ "$ROLE" = relay ]; then
     RELAY_IP="$SELF_IP"; EXIT_IP="$PEER_IP"
 elif [ "$ROLE" = node ]; then
     # The relays come from the panel; the panel is the other address.
-    RELAY_IP=""; EXIT_IP="$SELF_IP"; PANEL_IP="$PEER_IP"
+    RELAY_IP=""; EXIT_IP="$SELF_IP"; PANEL_IP="$PANEL_HOST"
     if [ -z "${SYNC_TOKEN:-}" ] && [ -z "${ASSUME_YES:-}" ]; then
         printf '\n  The pairing token is on the admin panel'"'"'s Node page, on %s.\n' "$PEER_IP"
         read -r -p "  pairing token: " SYNC_TOKEN
@@ -2292,7 +2326,7 @@ if [ "$ROLE" = node ]; then
     case "$FINGER" in
         *[!0-9a-f]*|"") die "the fingerprint half of the token is not hexadecimal" ;;
     esac
-    valid_ip "$PANEL_IP" || die "PANEL_IP '$PANEL_IP' is not an IPv4 address"
+    valid_host "$PANEL_IP" || die "PANEL_HOST '$PANEL_IP' is not a valid IPv4 address or DNS hostname"
     mkdir -p /etc/hunter-dns; chmod 700 /etc/hunter-dns
     umask 077
     note_file /etc/hunter-dns/node.env
@@ -2856,7 +2890,7 @@ if [ "$ROLE" = node ]; then
     # without any secret being looked at. Anything else - a timeout, most
     # likely - is this node's address not yet on the panel's Node page.
     check "the panel's API answers this node" \
-          "$(curl -sk -o /dev/null -m 20 --resolve "sync.example.com:8443:${PANEL_IP}" -w '%{http_code}' "https://sync.example.com:8443/" 2>/dev/null || true)" "501"
+          "$(curl -sk -o /dev/null -m 20 --connect-to "sync.example.com:8443:${PANEL_IP}:8443" -w '%{http_code}' "https://sync.example.com:8443/" 2>/dev/null || true)" "501"
 fi
 if [ "$TUNNEL" = backpack ]; then
     check "the tunnel service is running" "$(systemctl is-active hunterdns-tunnel.service)" active
@@ -24614,7 +24648,7 @@ exit 0
 #                   % (html.escape(ip or "?"), kind, seen,
 #                      html.escape(", ".join(users)) or "<span class='muted'>-</span>", remove))
 #    out.append("</table>")
-#    out.append("<form method='post' action='/%s/node-add' class='row' style='margin-top:12px'><input name='ip' dir='ltr' placeholder='آی‌پی سرور خارج تازه' style='min-width:200px'><button>افزودن "
+#    out.append("<form method='post' action='/%s/node-add' class='row' style='margin-top:12px'><input name='ip' dir='ltr' placeholder='IP سرور خارج تازه' style='min-width:200px'><button>افزودن "
 #               "سرور</button></form>" % p)
 #    token = pairing_token()
 #    if token:
@@ -24622,7 +24656,7 @@ exit 0
 #            "<details style='margin-top:12px'><summary>نصب یک سرور خارج "
 #            "تازه</summary><ol class='muted'><li>آی‌پی سرور تازه را این بالا اضافه کنید.</li><li>روی "
 #            "آن سرور، با فایل نصب‌کنندهٔ همین نسخه، این را اجرا "
-#            "کنید:</li></ol><pre dir='ltr' style='white-space:pre-wrap;word-break:break-all'>sudo env ROLE=node PANEL_IP=%s SYNC_TOKEN=%s bash hunter-dns.sh</pre><p class='muted'>وقتی "
+#            "کنید:</li></ol><pre dir='ltr' style='white-space:pre-wrap;word-break:break-all'>sudo env ROLE=node PANEL_HOST=%s PANEL_API_CODE=%s bash hunter-dns.sh</pre><p class='muted'>وقتی "
 #            "در این جدول «وصل» شد، از ستون «سرور خارج» جدول رله‌ها رله‌هایی را که باید از آن بروند "
 #            "انتخاب کنید. توکن را فقط خودتان نگه دارید.</p></details>" % (html.escape(here or "آی‌پی-همین-سرور"), html.escape(token)))
 #    out.append("<p class='muted'>هر رله از سرور خارجی که برایش انتخاب شده می‌رود؛ اگر آن "
