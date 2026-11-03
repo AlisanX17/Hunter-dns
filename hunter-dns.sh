@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.3"
+VERSION="0.1.2"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -942,9 +942,8 @@ case "${1:-}" in
         printf '                 (l3 is BackPack'"'"'s direct, as its menu makes it now)\n'
         printf '  TUNNEL_PORT=8444     the tunnel between relay and exit, asked on the exit\n'
         printf '  TUNNEL_PRESET=turbo  balance|turbo|aggressive|throughput - BackPack'"'"'s, or none\n'
-        printf '  ROLE=node PANEL_HOST=<main panel IP or domain> PANEL_API_CODE=<token>\n'
-        printf '                 another exit, joined to the central customer database\n'
-        printf '                 PANEL_IP and SYNC_TOKEN remain accepted for older commands\n'
+        printf '  ROLE=node PANEL_IP=<main exit> SYNC_TOKEN=<token>   another exit, joined to\n'
+        printf '                 that panel - the token is on its admin panel'"'"'s Node page\n'
         printf '  ROLE=single PANEL_IP=<main exit> SYNC_TOKEN=<token>   a single server in\n'
         printf '                 another country, its customers and quota those of that panel\n'
         printf '  BACKPACK_TARBALL=/path/backpack_linux_amd64.tar.gz   BackPack without GitHub\n'
@@ -1518,30 +1517,12 @@ fi
 
 # ---------------------------------------------------------------- questions
 valid_ip() {
-    local ip="$1" part n
+    local ip="$1" part
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
     IFS='.' read -r -a part <<< "$ip"
     for n in "${part[@]}"; do [ "$n" -le 255 ] || return 1; done
 }
 
-# A node can reach the central panel by its Cloudflare DNS-only hostname.
-# The node still keeps the resolved IPv4 separately for its server identity.
-valid_host() {
-    local h="$1" label
-    [ -n "$h" ] && [ "${#h}" -le 253 ] || return 1
-    [[ "$h" =~ ^[A-Za-z0-9.-]+$ ]] || return 1
-    [[ "$h" != .* && "$h" != *..* && "$h" != *. ]] || return 1
-    IFS='.' read -r -a labels <<< "$h"
-    for label in "${labels[@]}"; do
-        [ -n "$label" ] && [ "${#label}" -le 63 ] || return 1
-        [[ "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]] || return 1
-    done
-}
-
-# PANEL_API_CODE is the human-facing name for the existing pinned API pairing
-# token. Keep SYNC_TOKEN as a backward-compatible alias.
-SYNC_TOKEN="${SYNC_TOKEN:-${PANEL_API_CODE:-}}"
-PANEL_HOST="${PANEL_HOST:-${PANEL_IP:-}}"
 ROLE="${ROLE:-}"; PEER_IP="${PEER_IP:-}"; SELF_IP="${SELF_IP:-}"
 
 if [ -z "$ROLE" ]; then
@@ -1564,13 +1545,7 @@ fi
 [ "$ROLE" = relay ] || [ "$ROLE" = exit ] || [ "$ROLE" = single ] || [ "$ROLE" = node ] \
     || die "ROLE must be relay, exit, single or node"
 # A node's other end is the exit its panel is on.
-if [ "$ROLE" = node ]; then
-    PANEL_HOST="${PANEL_HOST:-${PANEL_IP:-$PEER_IP}}"
-    if [ -n "$PANEL_HOST" ] && ! valid_ip "$PEER_IP"; then
-        if valid_ip "$PANEL_HOST"; then PEER_IP="$PANEL_HOST"
-        else PEER_IP="$(getent ahostsv4 "$PANEL_HOST" 2>/dev/null | awk 'NR==1 {print $1}')"; fi
-    fi
-fi
+[ "$ROLE" = node ] && [ -z "$PEER_IP" ] && PEER_IP="${PANEL_IP:-}"
 SINGLE=""
 if [ "$ROLE" = single ]; then
     SINGLE=1
@@ -1593,16 +1568,7 @@ if [ -z "$PEER_IP" ] && [ "$ROLE" != single ]; then
         read -r -p "  public address of the RELAY server in Iran: " PEER_IP
     fi
 fi
-if [ "$ROLE" = node ]; then
-    PANEL_HOST="${PANEL_HOST:-${PANEL_IP:-$PEER_IP}}"
-    valid_host "$PANEL_HOST" || die "PANEL_HOST '$PANEL_HOST' is not a valid IPv4 address or DNS hostname"
-    if ! valid_ip "$PEER_IP"; then
-        PEER_IP="$(getent ahostsv4 "$PANEL_HOST" 2>/dev/null | awk 'NR==1 {print $1}')"
-    fi
-    [ -n "$PEER_IP" ] && valid_ip "$PEER_IP" || die "cannot resolve PANEL_HOST '$PANEL_HOST' to an IPv4 address; check its DNS A record"
-else
-    [ "$ROLE" = single ] || valid_ip "$PEER_IP" || die "'$PEER_IP' is not an IPv4 address"
-fi
+[ "$ROLE" = single ] || valid_ip "$PEER_IP" || die "'$PEER_IP' is not an IPv4 address"
 
 if [ -z "$SELF_IP" ]; then
     guess="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)"
@@ -1622,7 +1588,7 @@ if [ "$ROLE" = single ]; then
     RELAY_IP="$SELF_IP"; EXIT_IP="$SELF_IP"; PEER_IP="$SELF_IP"
     if [ -n "${PANEL_IP:-}" ] && [ "$PANEL_IP" != 127.0.0.1 ] && [ "$PANEL_IP" != "$SELF_IP" ]; then
         JOINED=1
-        valid_host "$PANEL_IP" || die "PANEL_HOST '$PANEL_IP' is not a valid IPv4 address or DNS hostname"
+        valid_ip "$PANEL_IP" || die "PANEL_IP '$PANEL_IP' is not an IPv4 address"
         if [ -z "${SYNC_TOKEN:-}" ] && [ -z "${ASSUME_YES:-}" ]; then
             printf '\n  The pairing token is on the admin panel'"'"'s Node page, on %s.\n' "$PANEL_IP"
             read -r -p "  pairing token: " SYNC_TOKEN
@@ -1634,7 +1600,7 @@ elif [ "$ROLE" = relay ]; then
     RELAY_IP="$SELF_IP"; EXIT_IP="$PEER_IP"
 elif [ "$ROLE" = node ]; then
     # The relays come from the panel; the panel is the other address.
-    RELAY_IP=""; EXIT_IP="$SELF_IP"; PANEL_IP="$PANEL_HOST"
+    RELAY_IP=""; EXIT_IP="$SELF_IP"; PANEL_IP="$PEER_IP"
     if [ -z "${SYNC_TOKEN:-}" ] && [ -z "${ASSUME_YES:-}" ]; then
         printf '\n  The pairing token is on the admin panel'"'"'s Node page, on %s.\n' "$PEER_IP"
         read -r -p "  pairing token: " SYNC_TOKEN
@@ -2326,7 +2292,7 @@ if [ "$ROLE" = node ]; then
     case "$FINGER" in
         *[!0-9a-f]*|"") die "the fingerprint half of the token is not hexadecimal" ;;
     esac
-    valid_host "$PANEL_IP" || die "PANEL_HOST '$PANEL_IP' is not a valid IPv4 address or DNS hostname"
+    valid_ip "$PANEL_IP" || die "PANEL_IP '$PANEL_IP' is not an IPv4 address"
     mkdir -p /etc/hunter-dns; chmod 700 /etc/hunter-dns
     umask 077
     note_file /etc/hunter-dns/node.env
@@ -2890,7 +2856,7 @@ if [ "$ROLE" = node ]; then
     # without any secret being looked at. Anything else - a timeout, most
     # likely - is this node's address not yet on the panel's Node page.
     check "the panel's API answers this node" \
-          "$(curl -sk -o /dev/null -m 20 --connect-to "sync.example.com:8443:${PANEL_IP}:8443" -w '%{http_code}' "https://sync.example.com:8443/" 2>/dev/null || true)" "501"
+          "$(curl -sk -o /dev/null -m 20 --resolve "sync.example.com:8443:${PANEL_IP}" -w '%{http_code}' "https://sync.example.com:8443/" 2>/dev/null || true)" "501"
 fi
 if [ "$TUNNEL" = backpack ]; then
     check "the tunnel service is running" "$(systemctl is-active hunterdns-tunnel.service)" active
@@ -4835,6 +4801,7 @@ exit 0
 #__END_ACL_SAVE_TIMER__
 
 #__BEGIN_PANEL__
+#
 ##!/usr/bin/env python3
 #"""hunterdns-panel - the database behind the relays, and the API they sync to.
 #
@@ -5001,17 +4968,6 @@ exit 0
 #);
 #
 #CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
-#
-#-- Website integrations map their own stable customer IDs to one central account.
-#-- The API key is scoped to this integration and cannot access admin/bot routes.
-#CREATE TABLE IF NOT EXISTS site_api_customers (
-#    id          INTEGER PRIMARY KEY,
-#    source_key  INTEGER NOT NULL,
-#    external_id TEXT NOT NULL,
-#    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-#    created_at  TEXT NOT NULL,
-#    UNIQUE(source_key, external_id)
-#);
 #CREATE INDEX IF NOT EXISTS ips_user ON ips(user_id);
 #
 #-- A template is a named set of service groups that route through the relay.
@@ -12222,10 +12178,11 @@ exit 0
 #    _seller = None
 #
 #    ROUTES = [
+#        ("GET", re.compile(r"/api/v1/?$"), "ping"),
+#        # Website integration is deliberately separate from the Telegram bot API.
 #        ("GET", re.compile(r"/api/v1/site/ping$"), "site_ping"),
 #        ("GET", re.compile(r"/api/v1/site/plans$"), "site_plans"),
-#        ("POST", re.compile(r"/api/v1/site/customers$"), "site_customer"),
-#        ("GET", re.compile(r"/api/v1/?$"), "ping"),
+#        ("POST", re.compile(r"/api/v1/site/customers$"), "site_create_customer"),
 #        ("GET", re.compile(r"/api/v1/plans$"), "list_plans"),
 #        ("POST", re.compile(r"/api/v1/users$"), "create_user"),
 #        ("POST", re.compile(r"/api/v1/link$"), "link"),
@@ -12345,16 +12302,21 @@ exit 0
 #                % (key["name"], ip))
 #            return self.reply(403, refused("ip_not_allowed",
 #                                           "این کلید از این آدرس پذیرفته نمی‌شود"))
+#        # Site keys can call only the explicitly scoped website endpoints;
+#        # conversely, bot/customer/admin keys cannot enter the website API.
+#        scope = key["scope"] or "customer"
+#        if path.startswith("/api/v1/site/"):
+#            if scope != "site":
+#                return self.reply(403, refused("site_key_required",
+#                                               "برای API سایت باید کلید اختصاصی سایت داشته باشید"))
+#        elif scope == "site":
+#            return self.reply(403, refused("site_scope_only",
+#                                           "این کلید فقط برای API سایت مجاز است"))
 #        # Money and accounts: only a key made with admin rights.
-#        if path.startswith("/api/v1/admin") and (key["scope"] or "customer") != "admin":
+#        if path.startswith("/api/v1/admin") and scope != "admin":
 #            return self.reply(403, refused("admin_only",
 #                                           "این کلید دسترسی ادمین ندارد"))
 #        self._key = key
-#        is_site_route = path.startswith("/api/v1/site/")
-#        if (key["scope"] or "customer") == "site" and not is_site_route:
-#            return self.reply(403, refused("site_key_only", "این کلید فقط برای API سایت است"))
-#        if is_site_route and (key["scope"] or "customer") != "site":
-#            return self.reply(403, refused("site_key_required", "برای این مسیر کلید API سایت لازم است"))
 #        # A reseller's bot: their customers, their plans, their card number.
 #        self._seller = key["admin_id"] if "admin_id" in key.keys() else None
 #        if self._seller and self.store.one("SELECT 1 FROM admins WHERE id = ? AND disabled = 1",
@@ -12458,59 +12420,6 @@ exit 0
 #                                       "کاربری با این آیدی تلگرام نیست"))
 #        return user, None
 #
-#    def api_site_ping(self, body):
-#        return 200, {"ok": True, "service": "Hunter DNS Site API", "version": 1}
-#
-#    def api_site_plans(self, body):
-#        plans = self.store.plans_for_sale(None)
-#        return 200, {"ok": True, "plans": plans}
-#
-#    def api_site_customer(self, body):
-#        """Create or retrieve one pending central customer by the website's stable ID.
-#
-#        This is deliberately a registration endpoint, not a payment/activation
-#        endpoint. The website cannot silently grant quota or select a server.
-#        The owner activates the account by assigning a plan in the panel.
-#        """
-#        external_id = str(body.get("external_id") or "").strip()
-#        name = unicodedata.normalize("NFC", str(body.get("name") or "")).strip()[:60]
-#        phone = re.sub(r"\s+", "", str(body.get("phone") or ""))[:32]
-#        if not re.fullmatch(r"[A-Za-z0-9._:@/-]{1,100}", external_id):
-#            return 400, refused("bad_external_id", "external_id باید شناسه یکتای مشتری در سایت باشد")
-#        if not name:
-#            return 400, refused("name_required", "نام مشتری الزامی است")
-#        if phone and not re.fullmatch(r"[+0-9().-]{5,32}", phone):
-#            return 400, refused("bad_phone", "شماره تماس معتبر نیست")
-#        source_key = int(self._key["id"])
-#        linked = self.store.one("SELECT user_id FROM site_api_customers WHERE source_key = ? AND external_id = ?",
-#                                (source_key, external_id))
-#        if linked:
-#            user = self.store.one("SELECT id, phone, username, first_name, status, created_at FROM users WHERE id = ?",
-#                                  (linked["user_id"],))
-#            return 200, {"ok": True, "created": False, "user": dict(user)}
-#        if phone and self.store.one("SELECT id FROM users WHERE phone = ?", (phone,)):
-#            return 409, refused("phone_exists", "این شماره قبلاً در پنل ثبت شده است؛ حساب موجود را دستی بررسی کنید")
-#        stamp = now()
-#        try:
-#            with self.store.lock:
-#                cur = self.store.db.execute(
-#                    "INSERT INTO users (phone, username, first_name, created_at, status, quota_bytes, quota_mode, quota_reset_at, expires_at) "
-#                    "VALUES (?, ?, ?, ?, 'pending', 0, 'oneoff', NULL, NULL)",
-#                    (phone or None, str(body.get("username") or "").strip()[:40] or None, name, stamp))
-#                uid = cur.lastrowid
-#                self.store.db.execute(
-#                    "INSERT INTO site_api_customers (source_key, external_id, user_id, created_at) VALUES (?, ?, ?, ?)",
-#                    (source_key, external_id, uid, stamp))
-#                self.store.db.commit()
-#        except sqlite3.IntegrityError:
-#            self.store.db.rollback()
-#            return 409, refused("customer_conflict", "این مشتری قبلاً ثبت شده یا اطلاعات تکراری است")
-#        self.admin_log("site customer #%d created from external id %s" % (uid, external_id[:40]))
-#        user = self.store.one("SELECT id, phone, username, first_name, status, created_at FROM users WHERE id = ?", (uid,))
-#        emit_admin(self.store, "user.created", {"user_id": uid, "via": "site_api",
-#                   "text": "مشتری تازه از API سایت: %s" % (name or ("#%d" % uid))})
-#        return 201, {"ok": True, "created": True, "user": dict(user)}
-#
 #    def api_ping(self, body):
 #        try:
 #            with open(VERSION_FILE) as fh:
@@ -12527,6 +12436,69 @@ exit 0
 #                                                    else "pay_text"),
 #                     "wallet_on": wallet_on(self.store), "topup_min": TOPUP_MIN,
 #                     "topup_max": TOPUP_MAX, "device_price": device_price(self.store)}
+#
+#    def api_site_ping(self, body):
+#        """A harmless health check for a website's server-side integration."""
+#        try:
+#            with open(VERSION_FILE, encoding="utf-8") as fh:
+#                version = fh.read().strip()[:20]
+#        except OSError:
+#            version = ""
+#        return 200, {"ok": True, "service": "Hunter DNS Website API",
+#                     "version": version, "database": "connected"}
+#
+#    def api_site_plans(self, body):
+#        """Only active public plan fields; never expose internal template IDs."""
+#        rows = self.store.q(
+#            "SELECT p.id, p.name, p.days, p.quota_bytes, p.price, p.speed_kbps,"
+#            " p.note, p.devices, t.name AS template FROM plans p"
+#            " LEFT JOIN templates t ON t.id = p.template_id"
+#            " WHERE p.active = 1 AND p.is_trial = 0 ORDER BY p.price, p.id")
+#        return 200, {"ok": True, "plans": [
+#            {"id": r["id"], "name": r["name"], "days": r["days"],
+#             "quota_bytes": r["quota_bytes"], "price": r["price"],
+#             "speed_kbps": r["speed_kbps"], "note": r["note"] or "",
+#             "devices": r["devices"], "template": r["template"] or ""}
+#            for r in rows]}
+#
+#    def api_site_create_customer(self, body):
+#        """Create a pending web account in the central customer database.
+#
+#        A website never gets to choose a plan or activate service by creating
+#        an account. The operator still assigns/approves the plan in Hunter DNS.
+#        """
+#        username = normal_username(body.get("username"))
+#        password = body.get("password") or ""
+#        name = unicodedata.normalize("NFC", str(body.get("name") or "")).strip()[:60]
+#        if not username:
+#            return 400, refused("bad_username", "نام کاربری باید ۳ تا ۳۲ نویسه و شامل حروف انگلیسی، عدد، نقطه، خط تیره یا زیرخط باشد")
+#        if len(password) < 8 or len(password) > 256:
+#            return 400, refused("bad_password", "رمز عبور باید بین ۸ تا ۲۵۶ نویسه باشد")
+#        existing = self.store.user_by_username(username)
+#        if existing:
+#            return 409, refused("username_taken", "این نام کاربری قبلاً ثبت شده است")
+#        # Check phone uniqueness before creating the account, so a rejected
+#        # request never leaves behind a half-created customer.
+#        phone = normal_phone(body.get("phone")) if body.get("phone") else ""
+#        if phone and self.store.user_by_phone(phone):
+#            return 409, refused("phone_taken", "این شماره قبلاً به حساب دیگری متصل است")
+#        try:
+#            user = self.store.create_web_user(username, name, password)
+#        except sqlite3.IntegrityError:
+#            return 409, refused("username_taken", "این نام کاربری قبلاً ثبت شده است")
+#        if phone:
+#            self.store.run("UPDATE users SET phone = ? WHERE id = ?", (phone, user["id"]))
+#            user = self.store.one("SELECT * FROM users WHERE id = ?", (user["id"],))
+#        self.admin_log("website created customer #%d (%s)" % (user["id"], username))
+#        emit_admin(self.store, "user.created", {
+#            "user_id": user["id"], "via": "website-api",
+#            "text": "مشتری تازه از API سایت: %s" % username})
+#        return 201, {"ok": True, "created": True,
+#                     "customer": {"id": user["id"], "username": user["username"],
+#                                  "name": user["first_name"] or "",
+#                                  "status": user["status"],
+#                                  "created_at": user["created_at"]},
+#                     "message": "حساب ساخته شد؛ تا اختصاص پلن توسط مدیر، سرویس فعال نیست"}
 #
 #    def api_create_user(self, body):
 #        try:
@@ -21300,6 +21272,7 @@ exit 0
 #__END_CERT_TIMER__
 
 #__BEGIN_ADMIN__
+#
 ##!/usr/bin/env python3
 #"""hunterdns-admin - the operator's web panel.
 #
@@ -24720,7 +24693,7 @@ exit 0
 #                   % (html.escape(ip or "?"), kind, seen,
 #                      html.escape(", ".join(users)) or "<span class='muted'>-</span>", remove))
 #    out.append("</table>")
-#    out.append("<form method='post' action='/%s/node-add' class='row' style='margin-top:12px'><input name='ip' dir='ltr' placeholder='IP سرور خارج تازه' style='min-width:200px'><button>افزودن "
+#    out.append("<form method='post' action='/%s/node-add' class='row' style='margin-top:12px'><input name='ip' dir='ltr' placeholder='آی‌پی سرور خارج تازه' style='min-width:200px'><button>افزودن "
 #               "سرور</button></form>" % p)
 #    token = pairing_token()
 #    if token:
@@ -24728,7 +24701,7 @@ exit 0
 #            "<details style='margin-top:12px'><summary>نصب یک سرور خارج "
 #            "تازه</summary><ol class='muted'><li>آی‌پی سرور تازه را این بالا اضافه کنید.</li><li>روی "
 #            "آن سرور، با فایل نصب‌کنندهٔ همین نسخه، این را اجرا "
-#            "کنید:</li></ol><pre dir='ltr' style='white-space:pre-wrap;word-break:break-all'>sudo env ROLE=node PANEL_HOST=%s PANEL_API_CODE=%s bash hunter-dns.sh</pre><p class='muted'>وقتی "
+#            "کنید:</li></ol><pre dir='ltr' style='white-space:pre-wrap;word-break:break-all'>sudo env ROLE=node PANEL_IP=%s SYNC_TOKEN=%s bash hunter-dns.sh</pre><p class='muted'>وقتی "
 #            "در این جدول «وصل» شد، از ستون «سرور خارج» جدول رله‌ها رله‌هایی را که باید از آن بروند "
 #            "انتخاب کنید. توکن را فقط خودتان نگه دارید.</p></details>" % (html.escape(here or "آی‌پی-همین-سرور"), html.escape(token)))
 #    out.append("<p class='muted'>هر رله از سرور خارجی که برایش انتخاب شده می‌رود؛ اگر آن "
@@ -27804,7 +27777,8 @@ exit 0
 #                "users-rows": "users", "wg": "users", "wireguard": "settings",
 #                "wallet": "users", "usage": "users", "receipts": "receipts",
 #                "plans": "plans", "pay": "plans", "tickets": "tickets",
-#                "templates": "templates", "domains": "templates", "bot": "bot", "api": "bot", "site-api": OWNER,
+#                "templates": "templates", "domains": "templates", "bot": "bot", "api": "bot",
+#                "api-site": OWNER,
 #                "nodes": "nodes", "server": "nodes", "settings": "settings", "logs": "logs",
 #                "diagnose": "logs", "admins": OWNER, "restore": OWNER}
 #ACTION_SECTION = {
@@ -27825,7 +27799,7 @@ exit 0
 #    "blocked-del": "templates", "forward-add": "templates", "forward-del": "templates",
 #    "bot-setup": "bot", "bot-power": "bot", "bot-test": "bot", "bot-link-save": "bot",
 #    "broadcast-send": "bot", "api-key-new": "bot", "api-key-revoke": "bot",
-#    "site-api-key-new": OWNER, "site-api-key-revoke": OWNER,
+#    "api-site-key-new": OWNER, "api-site-key-revoke": OWNER,
 #    "api-webhook-save": "bot", "api-webhook-test": "bot",
 #    "node-add": "nodes", "node-del": "nodes", "relay-add": "nodes", "relay-del": "nodes",
 #    "single-add": "nodes", "relay-exit": "nodes", "relay-tunnel": "nodes", "cap-save": "nodes",
@@ -28636,28 +28610,13 @@ exit 0
 #                               or "—"), p))
 #
 #
-#TRIANGLE_LOADING_CSS = r"""
-##hd-loading{position:fixed;inset:0;z-index:99999;display:none;place-items:center;background:color-mix(in srgb,var(--bg) 76%,transparent);backdrop-filter:blur(12px)}
-##hd-loading.show{display:grid}
-##hd-loading .tri-wrap{width:112px;height:112px;position:relative;filter:drop-shadow(0 0 18px color-mix(in srgb,var(--accent) 35%,transparent))}
-##hd-loading svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
-##hd-loading .tri-a{animation:hd-tri-spin 3.2s linear infinite;transform-origin:50% 50%}
-##hd-loading .tri-b{animation:hd-tri-spin-rev 2.4s linear infinite;transform-origin:50% 50%}
-##hd-loading .tri-c{animation:hd-tri-spin 1.7s linear infinite;transform-origin:50% 50%}
-##hd-loading polygon{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round}
-##hd-loading .tri-b polygon{stroke:var(--accent2);stroke-width:2.2}
-##hd-loading .tri-c polygon{stroke:var(--accent);stroke-width:2}
-##hd-loading .loading-label{position:absolute;top:calc(100% + 20px);width:180px;left:50%;transform:translateX(-50%);text-align:center;color:var(--fg);font-size:13px;font-weight:650}
+#ADMIN_TRIANGLE_LOADER = """<style>
+##hd-triangle-wait{position:fixed;inset:0;z-index:99999;display:none;align-items:center;justify-content:center;background:rgba(5,9,18,.76);backdrop-filter:blur(5px)}
+##hd-triangle-wait.on{display:flex}.hd-tri{position:absolute;width:78px;height:78px;border:3px solid var(--accent,#f59e0b);clip-path:polygon(50% 0,0 100%,100% 100%);animation:hd-tri-spin 1.8s linear infinite;filter:drop-shadow(0 0 8px var(--accent,#f59e0b))}
+#.hd-tri:nth-child(2){width:54px;height:54px;animation-direction:reverse;animation-duration:1.25s}.hd-tri:nth-child(3){width:30px;height:30px;animation-duration:.9s}
 #@keyframes hd-tri-spin{to{transform:rotate(360deg)}}
-#@keyframes hd-tri-spin-rev{to{transform:rotate(-360deg)}}
-#@media(prefers-reduced-motion:reduce){#hd-loading .tri-a,#hd-loading .tri-b,#hd-loading .tri-c{animation-duration:8s}}
-#"""
-#TRIANGLE_LOADING_HTML = """<div id='hd-loading' aria-hidden='true'><div class='tri-wrap'>
-#<svg viewBox='0 0 100 100' class='tri-a'><polygon points='50,5 95,88 5,88'/></svg>
-#<svg viewBox='0 0 100 100' class='tri-b'><polygon points='50,17 83,78 17,78'/></svg>
-#<svg viewBox='0 0 100 100' class='tri-c'><polygon points='50,29 71,68 29,68'/></svg>
-#<div class='loading-label'>در حال انجام عملیات…</div></div></div>"""
-#TRIANGLE_LOADING_JS = """<script>(function(){var o=document.getElementById('hd-loading');if(!o)return;function show(){o.classList.add('show');o.setAttribute('aria-hidden','false')}document.addEventListener('submit',function(e){if(e.target&&e.target.tagName==='FORM'){show()}},true);document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a||e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||a.target||a.hasAttribute('download'))return;var u;try{u=new URL(a.href,location.href)}catch(_){return}if(u.origin===location.origin&&u.pathname!==location.pathname+'#'&&!a.href.endsWith('#'))show()},true)})();</script>"""
+#</style><div id='hd-triangle-wait' aria-hidden='true'><i class='hd-tri'></i><i class='hd-tri'></i><i class='hd-tri'></i></div>
+#<script>(function(){var w=document.getElementById('hd-triangle-wait');if(!w)return;document.addEventListener('submit',function(e){var f=e.target;if(!f||f.dataset.noLoader==='1'||e.defaultPrevented)return;var b=f.querySelector('button[type=submit],button:not([type])');if(b&&b.disabled)return;w.classList.add('on');w.setAttribute('aria-hidden','false');if(b){b.dataset.oldText=b.textContent;b.disabled=true;}},true);})();</script>"""
 #
 #
 #def page(title, body, cfg, active="", msg=None, msg_kind="good"):
@@ -28666,7 +28625,8 @@ exit 0
 #    for path, label in (("", "خانه"), ("users", "کاربران"), ("receipts", "رسیدها"),
 #                        ("tickets", "تیکت‌ها (%d)" % waiting if waiting else "تیکت‌ها"),
 #                        ("plans", "پلن‌ها"), ("pay", "پرداخت"), ("templates", "قالب‌ها"),
-#                        ("domains", "دامنه‌ها"), ("bot", "ربات"), ("api", "API ربات"), ("site-api", "API سایت"), ("nodes", "نود"),
+#                        ("domains", "دامنه‌ها"), ("bot", "ربات"), ("api", "API"),
+#                        ("api-site", "API سایت"), ("nodes", "نود"),
 #                        ("wireguard", "وایرگارد"), ("settings", "تنظیمات"), ("logs", "لاگ"),
 #                        ("diagnose", "عیب‌یابی"), ("admins", "ادمین‌ها"), ("me", "حساب من")):
 #        # A single machine has no relays of its own to manage.
@@ -28695,10 +28655,10 @@ exit 0
 #<body><div class="shell"><aside class="side">%s<nav>%s<a class='out' href='/%s/logout'>خروج</a></nav></aside>
 #<main class="wrap"><div class="topbar"><h1>%s</h1><div class="tools">%s</div></div>
 #%s%s%s</main></div>%s</body></html>""" % (html.escape(title), THEME_HEAD,
-#                                 font_face("/" + cfg["ADMIN_PATH"]) + CSS + TRIANGLE_LOADING_CSS,
+#                                 font_face("/" + cfg["ADMIN_PATH"]) + CSS,
 #                                 brand_html(), nav, cfg["ADMIN_PATH"],
 #                                 html.escape(title), THEME_BUTTON,
-#                                 banner, body, footer_html(), TRIANGLE_LOADING_HTML + COPY_JS + TRIANGLE_LOADING_JS))
+#                                 banner, body, footer_html(), COPY_JS + ADMIN_TRIANGLE_LOADER))
 #
 #
 #def login_page(cfg, error=None):
@@ -29704,7 +29664,7 @@ exit 0
 #                 "templates": ("قالب‌های سرویس", self.templates),
 #                 "domains": ("مدیریت دامنه‌ها", self.domains),
 #                 "api": ("رابط API ربات", self.api_keys),
-#                 "site-api": ("API سایت", self.site_api_page),
+#                 "api-site": ("API سایت", self.api_site),
 #                 "bot": ("ربات تلگرام", self.bot_page),
 #                 "settings": ("تنظیمات پنل", self.settings),
 #                 "restore": ("بازیابی از نسخهٔ پشتیبان", self.restore_page),
@@ -30399,31 +30359,39 @@ exit 0
 #            out.append("</table></div>")
 #        return "".join(out)
 #
-#    def site_api_page(self):
+#    def api_site(self):
+#        """A separate, owner-managed API credential for an external website."""
 #        p = CFG["ADMIN_PATH"]
 #        rows = STORE.q("SELECT * FROM api_tokens WHERE scope = 'site' ORDER BY id DESC")
-#        out = ["<div class='card'><h2>اتصال وب‌سایت به Hunter DNS</h2>"
-#               "<p>این API برای سایت آزمایشی است. با کلید اختصاصی می‌تواند وضعیت اتصال و پلن‌های قابل فروش را بخواند و مشتری جدید را در دیتابیس مرکزی ثبت کند. حساب جدید ابتدا <b>در انتظار فعال‌سازی</b> می‌ماند؛ سایت به‌تنهایی نمی‌تواند حجم، پلن یا دسترسی سرورها را اعطا کند.</p>"
-#               "<p>نشانی پایه: <code dir='ltr'>%s</code></p>"
-#               "<p class='muted'>کلید فقط یک‌بار بعد از ساخت نمایش داده می‌شود. آن را در کد سمت سرور سایت نگه دارید؛ هرگز داخل JavaScript مرورگر قرار ندهید.</p></div>" % html.escape(bot_api_url().split("/api/v1/")[0])]
-#        out.append("<div class='card'><h2>ساخت کلید اختصاصی سایت</h2><form method='post' action='/%s/site-api-key-new'><div class='f'><label>نام سایت یا پروژه</label><input name='name' required maxlength='40' placeholder='مثلاً فروشگاه Hunter'></div><div class='f'><label>محدودیت IP (اختیاری، با کاما جدا کنید)</label><input name='allow_ips' dir='ltr' placeholder='203.0.113.10'></div><button>ساخت کلید API سایت</button></form></div>" % p)
+#        base = "https://%s:%d/api/v1/site" % (panel_host(), BOT_API_PORT)
+#        out = ["<div class='card'><h2>اتصال سایت به Hunter DNS</h2>"
+#               "<p>این API برای بک‌اند سایت است؛ کلید آن از API ربات جداست و فقط به سه مسیر سایت دسترسی دارد: تست اتصال، دریافت پلن‌های فعال و ثبت حساب مشتری. کلید سایت به API مدیریت، رسیدها یا اطلاعات خصوصی مشتریان دسترسی ندارد.</p>"
+#               "<p>آدرس API: <code dir='ltr'>%s</code></p>"
+#               "<p class='muted'>در کد سایت، کلید را فقط در بک‌اند/متغیر محیطی نگه دارید؛ هرگز آن را داخل JavaScript مرورگر، HTML یا مخزن عمومی GitHub قرار ندهید. بهتر است IP سرور سایت را در محدودیت IP وارد کنید.</p></div>" % html.escape(base)]
+#        out.append("<div class='card'><h2>کلیدهای API سایت</h2>")
 #        if rows:
-#            out.append("<div class='card'><h2>کلیدهای API سایت</h2><table><tr><th>نام</th><th>ساخته‌شده</th><th>آخرین استفاده</th><th>IP مجاز</th><th>وضعیت</th><th></th></tr>")
+#            out.append("<table><tr><th>نام</th><th>محدودیت IP</th><th>آخرین استفاده</th><th>وضعیت</th><th></th></tr>")
 #            for r in rows:
 #                live = not r["revoked_at"]
-#                confirm = html.escape(json.dumps("این کلید باطل شود؟ اتصال سایت با آن قطع خواهد شد.", ensure_ascii=False), quote=True)
-#                out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td></tr>" % (
-#                    html.escape(r["name"]), html.escape(show_date(r["created_at"], True)),
+#                out.append("<tr><td>%s</td><td dir='ltr'>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+#                    html.escape(r["name"]), html.escape(r["allow_ips"] or "همه IPها"),
 #                    html.escape(show_date(r["last_used_at"] or "هرگز", True)),
-#                    html.escape(r["allow_ips"] or "همه"), "فعال" if live else "باطل",
-#                    ("<form method='post' action='/%s/site-api-key-revoke' onsubmit='return confirm(%s)'><input type='hidden' name='id' value='%d'><button class='del'>باطل‌کردن</button></form>" % (p, confirm, r["id"])) if live else ""))
-#            out.append("</table></div>")
-#        out.append("""<div class='card'><h2>آزمایش اتصال</h2><p>درخواست وضعیت:</p><pre dir='ltr'><code>GET %s/api/v1/site/ping
-#Authorization: Bearer YOUR_SITE_API_KEY</code></pre><p>ثبت مشتری آزمایشی:</p><pre dir='ltr'><code>POST %s/api/v1/site/customers
-#Authorization: Bearer YOUR_SITE_API_KEY
-#Content-Type: application/json
-#
-#{\"external_id\":\"order-1001\",\"name\":\"Test Customer\",\"phone\":\"+989121234567\"}</code></pre><p class='muted'>برای هر مشتری external_id ثابت و یکتا بفرستید. تکرار همان شناسه مشتری جدید نمی‌سازد. پاسخ شامل user.id پنل است. برای فعال‌سازی و انتخاب پلن، از پنل مدیریت اقدام کنید.</p></div>""" % (html.escape(bot_api_url().split("/api/v1/")[0]), html.escape(bot_api_url().split("/api/v1/")[0])))
+#                    "<span class='ok'>فعال</span>" if live else "<span class='bad'>باطل</span>",
+#                    ("<form method='post' action='/%s/api-site-key-revoke' onsubmit='return confirm(&quot;این کلید سایت باطل شود؟&quot;)'><input type='hidden' name='id' value='%d'><button class='del'>باطل کردن</button></form>" % (p, r["id"])) if live else ""))
+#            out.append("</table>")
+#        else:
+#            out.append("<p class='muted'>هنوز کلید API سایت ساخته نشده است.</p>")
+#        out.append("<form method='post' action='/%s/api-site-key-new'><div class='grid'><div class='f'><label>نام سایت</label><input name='name' maxlength='40' required placeholder='مثلاً فروشگاه Hunter'></div><div class='f'><label>IP سرور سایت (اختیاری، پیشنهاد می‌شود)</label><input name='allow_ips' dir='ltr' placeholder='203.0.113.10'></div></div><button>ساخت کلید API سایت</button></form></div>" % p)
+#        out.append("""<div class='card'><h2>راهنمای تست API</h2>
+#<p>بعد از ساخت کلید، این دستور را در ترمینال سرور سایت اجرا کنید. به‌جای YOUR_API_KEY کلید را قرار دهید:</p>
+#<pre dir='ltr' style='white-space:pre-wrap;overflow-wrap:anywhere'>curl -sS '%s/ping' -H 'Authorization: Bearer YOUR_API_KEY'</pre>
+#<p>برای دریافت پلن‌ها:</p><pre dir='ltr' style='white-space:pre-wrap;overflow-wrap:anywhere'>curl -sS '%s/plans' -H 'Authorization: Bearer YOUR_API_KEY'</pre>
+#<p>برای ثبت مشتری آزمایشی:</p><pre dir='ltr' style='white-space:pre-wrap;overflow-wrap:anywhere'>curl -sS -X POST '%s/customers' \
+#  -H 'Authorization: Bearer YOUR_API_KEY' \
+#  -H 'Content-Type: application/json' \
+#  -H 'Idempotency-Key: test-customer-001' \
+#  -d '{"username":"test_customer_01","password":"ChangeThisPass123","name":"Test Customer"}'</pre>
+#<p class='muted'>حساب ساخته‌شده در وضعیت «در انتظار» می‌ماند؛ فعال‌سازی سرویس و تخصیص پلن همچنان از پنل Hunter DNS انجام می‌شود. برای پاک‌کردن حساب آزمایشی از صفحه مشتریان اقدام کنید.</p></div>""" % (html.escape(base), html.escape(base), html.escape(base)))
 #        return "".join(out)
 #
 #    def api_keys(self):
@@ -31768,38 +31736,40 @@ exit 0
 #            self.queue_bot_test(row["id"])
 #            return self.redirect("bot?m=پیام آزمایشی در صف است؛ چند ثانیه دیگر در تلگرام")
 #
-#        if rest == "site-api-key-new":
+#        if rest == "api-site-key-new":
 #            name = one("name").strip()[:40]
 #            if not name:
-#                return self.redirect("site-api?m=!یک نام برای کلید بنویسید")
+#                return self.redirect("api-site?m=!نام سایت را وارد کنید")
 #            allowed = []
-#            for a in one("allow_ips").replace("،", ",").split(","):
-#                a = a.strip()
-#                if not a:
+#            for addr in one("allow_ips").replace("،", ",").split(","):
+#                addr = addr.strip()
+#                if not addr:
 #                    continue
 #                try:
-#                    allowed.append(str(ipaddress.ip_address(a)))
+#                    allowed.append(str(ipaddress.ip_address(addr)))
 #                except ValueError:
-#                    return self.redirect("site-api?m=!«%s» آی‌پی درستی نیست" % a[:40])
-#            key = "site_" + secrets.token_urlsafe(36)
-#            STORE.run("INSERT INTO api_tokens (name, token_hash, allow_ips, created_at, scope) VALUES (?, ?, ?, ?, 'site')",
-#                      (name, hashlib.sha256(key.encode("utf-8")).hexdigest(), ",".join(allowed) or None, now()))
-#            log(INFO, "site API key %r created%s" % (name, " with IP allowlist" if allowed else ""))
-#            card = ("<div class='card'><h2>کلید API سایت: %s</h2><p class='onetime'><code>%s</code></p>"
-#                    "<p><b>این کلید فقط همین یک بار نمایش داده می‌شود.</b> آن را در متغیر محیطی سمت سرور سایت نگه دارید؛ داخل JavaScript مرورگر یا مخزن عمومی قرار ندهید.</p>"
-#                    "<p>نشانی پایه: <code dir='ltr'>%s</code></p>"
-#                    "<p>دسترسی این کلید محدود به <code>/api/v1/site/*</code> است و به API ربات یا API مدیریت دسترسی ندارد.</p>"
-#                    "<a href='/%s/site-api'>برگشت به API سایت</a></div>" %
-#                    (html.escape(name), html.escape(key), html.escape(bot_api_url().split("/api/v1/")[0]), CFG["ADMIN_PATH"]))
-#            return self.send(page("کلید API سایت", card, CFG, "site-api"))
+#                    return self.redirect("api-site?m=!IP واردشده معتبر نیست")
+#            key = "site_" + secrets.token_urlsafe(32)
+#            STORE.run("INSERT INTO api_tokens (name, token_hash, allow_ips, created_at, scope)"
+#                      " VALUES (?, ?, ?, ?, 'site')",
+#                      (name, hashlib.sha256(key.encode("utf-8")).hexdigest(),
+#                       ",".join(allowed) or None, now()))
+#            log(INFO, "website API key %r created%s" % (
+#                name, " restricted to " + ",".join(allowed) if allowed else ""))
+#            card = ("<div class='card'><h2>کلید API سایت ساخته شد</h2>"
+#                    "<p class='onetime'><code dir='ltr' style='overflow-wrap:anywhere'>%s</code></p>"
+#                    "<p class='bad'>این کلید فقط همین یک بار نمایش داده می‌شود. آن را در متغیر محیطی بک‌اند سایت ذخیره کن؛ در کد فرانت‌اند قرار نده.</p>"
+#                    "<p><a href='/%s/api-site'>بازگشت به API سایت</a></p></div>" %
+#                    (html.escape(key), p))
+#            return self.send(page("کلید API سایت", card, CFG, "api-site"))
 #
-#        if rest == "site-api-key-revoke":
+#        if rest == "api-site-key-revoke":
 #            kid = int(one("id") or 0)
-#            cur = STORE.run("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND scope = 'site' AND revoked_at IS NULL",
-#                            (now(), kid))
+#            cur = STORE.run("UPDATE api_tokens SET revoked_at = ? WHERE id = ?"
+#                            " AND scope = 'site' AND revoked_at IS NULL", (now(), kid))
 #            if not cur.rowcount:
-#                return self.redirect("site-api?m=!کلید پیدا نشد یا قبلاً باطل شده")
-#            return self.redirect("site-api?m=کلید API سایت باطل شد")
+#                return self.redirect("api-site?m=!کلید پیدا نشد یا قبلاً باطل شده")
+#            return self.redirect("api-site?m=کلید سایت باطل شد")
 #
 #        if rest == "api-key-new":
 #            name = one("name").strip()[:40]
