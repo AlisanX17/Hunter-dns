@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.2"
+VERSION="0.1.3"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -5001,6 +5001,17 @@ exit 0
 #);
 #
 #CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+#
+#-- Website integrations map their own stable customer IDs to one central account.
+#-- The API key is scoped to this integration and cannot access admin/bot routes.
+#CREATE TABLE IF NOT EXISTS site_api_customers (
+#    id          INTEGER PRIMARY KEY,
+#    source_key  INTEGER NOT NULL,
+#    external_id TEXT NOT NULL,
+#    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+#    created_at  TEXT NOT NULL,
+#    UNIQUE(source_key, external_id)
+#);
 #CREATE INDEX IF NOT EXISTS ips_user ON ips(user_id);
 #
 #-- A template is a named set of service groups that route through the relay.
@@ -12211,6 +12222,9 @@ exit 0
 #    _seller = None
 #
 #    ROUTES = [
+#        ("GET", re.compile(r"/api/v1/site/ping$"), "site_ping"),
+#        ("GET", re.compile(r"/api/v1/site/plans$"), "site_plans"),
+#        ("POST", re.compile(r"/api/v1/site/customers$"), "site_customer"),
 #        ("GET", re.compile(r"/api/v1/?$"), "ping"),
 #        ("GET", re.compile(r"/api/v1/plans$"), "list_plans"),
 #        ("POST", re.compile(r"/api/v1/users$"), "create_user"),
@@ -12336,6 +12350,11 @@ exit 0
 #            return self.reply(403, refused("admin_only",
 #                                           "این کلید دسترسی ادمین ندارد"))
 #        self._key = key
+#        is_site_route = path.startswith("/api/v1/site/")
+#        if (key["scope"] or "customer") == "site" and not is_site_route:
+#            return self.reply(403, refused("site_key_only", "این کلید فقط برای API سایت است"))
+#        if is_site_route and (key["scope"] or "customer") != "site":
+#            return self.reply(403, refused("site_key_required", "برای این مسیر کلید API سایت لازم است"))
 #        # A reseller's bot: their customers, their plans, their card number.
 #        self._seller = key["admin_id"] if "admin_id" in key.keys() else None
 #        if self._seller and self.store.one("SELECT 1 FROM admins WHERE id = ? AND disabled = 1",
@@ -12438,6 +12457,59 @@ exit 0
 #            return None, (404, refused("user_not_found",
 #                                       "کاربری با این آیدی تلگرام نیست"))
 #        return user, None
+#
+#    def api_site_ping(self, body):
+#        return 200, {"ok": True, "service": "Hunter DNS Site API", "version": 1}
+#
+#    def api_site_plans(self, body):
+#        plans = self.store.plans_for_sale(None)
+#        return 200, {"ok": True, "plans": plans}
+#
+#    def api_site_customer(self, body):
+#        """Create or retrieve one pending central customer by the website's stable ID.
+#
+#        This is deliberately a registration endpoint, not a payment/activation
+#        endpoint. The website cannot silently grant quota or select a server.
+#        The owner activates the account by assigning a plan in the panel.
+#        """
+#        external_id = str(body.get("external_id") or "").strip()
+#        name = unicodedata.normalize("NFC", str(body.get("name") or "")).strip()[:60]
+#        phone = re.sub(r"\s+", "", str(body.get("phone") or ""))[:32]
+#        if not re.fullmatch(r"[A-Za-z0-9._:@/-]{1,100}", external_id):
+#            return 400, refused("bad_external_id", "external_id باید شناسه یکتای مشتری در سایت باشد")
+#        if not name:
+#            return 400, refused("name_required", "نام مشتری الزامی است")
+#        if phone and not re.fullmatch(r"[+0-9().-]{5,32}", phone):
+#            return 400, refused("bad_phone", "شماره تماس معتبر نیست")
+#        source_key = int(self._key["id"])
+#        linked = self.store.one("SELECT user_id FROM site_api_customers WHERE source_key = ? AND external_id = ?",
+#                                (source_key, external_id))
+#        if linked:
+#            user = self.store.one("SELECT id, phone, username, first_name, status, created_at FROM users WHERE id = ?",
+#                                  (linked["user_id"],))
+#            return 200, {"ok": True, "created": False, "user": dict(user)}
+#        if phone and self.store.one("SELECT id FROM users WHERE phone = ?", (phone,)):
+#            return 409, refused("phone_exists", "این شماره قبلاً در پنل ثبت شده است؛ حساب موجود را دستی بررسی کنید")
+#        stamp = now()
+#        try:
+#            with self.store.lock:
+#                cur = self.store.db.execute(
+#                    "INSERT INTO users (phone, username, first_name, created_at, status, quota_bytes, quota_mode, quota_reset_at, expires_at) "
+#                    "VALUES (?, ?, ?, ?, 'pending', 0, 'oneoff', NULL, NULL)",
+#                    (phone or None, str(body.get("username") or "").strip()[:40] or None, name, stamp))
+#                uid = cur.lastrowid
+#                self.store.db.execute(
+#                    "INSERT INTO site_api_customers (source_key, external_id, user_id, created_at) VALUES (?, ?, ?, ?)",
+#                    (source_key, external_id, uid, stamp))
+#                self.store.db.commit()
+#        except sqlite3.IntegrityError:
+#            self.store.db.rollback()
+#            return 409, refused("customer_conflict", "این مشتری قبلاً ثبت شده یا اطلاعات تکراری است")
+#        self.admin_log("site customer #%d created from external id %s" % (uid, external_id[:40]))
+#        user = self.store.one("SELECT id, phone, username, first_name, status, created_at FROM users WHERE id = ?", (uid,))
+#        emit_admin(self.store, "user.created", {"user_id": uid, "via": "site_api",
+#                   "text": "مشتری تازه از API سایت: %s" % (name or ("#%d" % uid))})
+#        return 201, {"ok": True, "created": True, "user": dict(user)}
 #
 #    def api_ping(self, body):
 #        try:
@@ -27732,7 +27804,7 @@ exit 0
 #                "users-rows": "users", "wg": "users", "wireguard": "settings",
 #                "wallet": "users", "usage": "users", "receipts": "receipts",
 #                "plans": "plans", "pay": "plans", "tickets": "tickets",
-#                "templates": "templates", "domains": "templates", "bot": "bot", "api": "bot",
+#                "templates": "templates", "domains": "templates", "bot": "bot", "api": "bot", "site-api": OWNER,
 #                "nodes": "nodes", "server": "nodes", "settings": "settings", "logs": "logs",
 #                "diagnose": "logs", "admins": OWNER, "restore": OWNER}
 #ACTION_SECTION = {
@@ -27753,6 +27825,7 @@ exit 0
 #    "blocked-del": "templates", "forward-add": "templates", "forward-del": "templates",
 #    "bot-setup": "bot", "bot-power": "bot", "bot-test": "bot", "bot-link-save": "bot",
 #    "broadcast-send": "bot", "api-key-new": "bot", "api-key-revoke": "bot",
+#    "site-api-key-new": OWNER, "site-api-key-revoke": OWNER,
 #    "api-webhook-save": "bot", "api-webhook-test": "bot",
 #    "node-add": "nodes", "node-del": "nodes", "relay-add": "nodes", "relay-del": "nodes",
 #    "single-add": "nodes", "relay-exit": "nodes", "relay-tunnel": "nodes", "cap-save": "nodes",
@@ -28563,13 +28636,37 @@ exit 0
 #                               or "—"), p))
 #
 #
+#TRIANGLE_LOADING_CSS = r"""
+##hd-loading{position:fixed;inset:0;z-index:99999;display:none;place-items:center;background:color-mix(in srgb,var(--bg) 76%,transparent);backdrop-filter:blur(12px)}
+##hd-loading.show{display:grid}
+##hd-loading .tri-wrap{width:112px;height:112px;position:relative;filter:drop-shadow(0 0 18px color-mix(in srgb,var(--accent) 35%,transparent))}
+##hd-loading svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+##hd-loading .tri-a{animation:hd-tri-spin 3.2s linear infinite;transform-origin:50% 50%}
+##hd-loading .tri-b{animation:hd-tri-spin-rev 2.4s linear infinite;transform-origin:50% 50%}
+##hd-loading .tri-c{animation:hd-tri-spin 1.7s linear infinite;transform-origin:50% 50%}
+##hd-loading polygon{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round}
+##hd-loading .tri-b polygon{stroke:var(--accent2);stroke-width:2.2}
+##hd-loading .tri-c polygon{stroke:var(--accent);stroke-width:2}
+##hd-loading .loading-label{position:absolute;top:calc(100% + 20px);width:180px;left:50%;transform:translateX(-50%);text-align:center;color:var(--fg);font-size:13px;font-weight:650}
+#@keyframes hd-tri-spin{to{transform:rotate(360deg)}}
+#@keyframes hd-tri-spin-rev{to{transform:rotate(-360deg)}}
+#@media(prefers-reduced-motion:reduce){#hd-loading .tri-a,#hd-loading .tri-b,#hd-loading .tri-c{animation-duration:8s}}
+#"""
+#TRIANGLE_LOADING_HTML = """<div id='hd-loading' aria-hidden='true'><div class='tri-wrap'>
+#<svg viewBox='0 0 100 100' class='tri-a'><polygon points='50,5 95,88 5,88'/></svg>
+#<svg viewBox='0 0 100 100' class='tri-b'><polygon points='50,17 83,78 17,78'/></svg>
+#<svg viewBox='0 0 100 100' class='tri-c'><polygon points='50,29 71,68 29,68'/></svg>
+#<div class='loading-label'>در حال انجام عملیات…</div></div></div>"""
+#TRIANGLE_LOADING_JS = """<script>(function(){var o=document.getElementById('hd-loading');if(!o)return;function show(){o.classList.add('show');o.setAttribute('aria-hidden','false')}document.addEventListener('submit',function(e){if(e.target&&e.target.tagName==='FORM'){show()}},true);document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a||e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||a.target||a.hasAttribute('download'))return;var u;try{u=new URL(a.href,location.href)}catch(_){return}if(u.origin===location.origin&&u.pathname!==location.pathname+'#'&&!a.href.endsWith('#'))show()},true)})();</script>"""
+#
+#
 #def page(title, body, cfg, active="", msg=None, msg_kind="good"):
 #    nav = ""
 #    waiting = tickets_waiting()
 #    for path, label in (("", "خانه"), ("users", "کاربران"), ("receipts", "رسیدها"),
 #                        ("tickets", "تیکت‌ها (%d)" % waiting if waiting else "تیکت‌ها"),
 #                        ("plans", "پلن‌ها"), ("pay", "پرداخت"), ("templates", "قالب‌ها"),
-#                        ("domains", "دامنه‌ها"), ("bot", "ربات"), ("api", "API"), ("nodes", "نود"),
+#                        ("domains", "دامنه‌ها"), ("bot", "ربات"), ("api", "API ربات"), ("site-api", "API سایت"), ("nodes", "نود"),
 #                        ("wireguard", "وایرگارد"), ("settings", "تنظیمات"), ("logs", "لاگ"),
 #                        ("diagnose", "عیب‌یابی"), ("admins", "ادمین‌ها"), ("me", "حساب من")):
 #        # A single machine has no relays of its own to manage.
@@ -28598,10 +28695,10 @@ exit 0
 #<body><div class="shell"><aside class="side">%s<nav>%s<a class='out' href='/%s/logout'>خروج</a></nav></aside>
 #<main class="wrap"><div class="topbar"><h1>%s</h1><div class="tools">%s</div></div>
 #%s%s%s</main></div>%s</body></html>""" % (html.escape(title), THEME_HEAD,
-#                                 font_face("/" + cfg["ADMIN_PATH"]) + CSS,
+#                                 font_face("/" + cfg["ADMIN_PATH"]) + CSS + TRIANGLE_LOADING_CSS,
 #                                 brand_html(), nav, cfg["ADMIN_PATH"],
 #                                 html.escape(title), THEME_BUTTON,
-#                                 banner, body, footer_html(), COPY_JS))
+#                                 banner, body, footer_html(), TRIANGLE_LOADING_HTML + COPY_JS + TRIANGLE_LOADING_JS))
 #
 #
 #def login_page(cfg, error=None):
@@ -29607,6 +29704,7 @@ exit 0
 #                 "templates": ("قالب‌های سرویس", self.templates),
 #                 "domains": ("مدیریت دامنه‌ها", self.domains),
 #                 "api": ("رابط API ربات", self.api_keys),
+#                 "site-api": ("API سایت", self.site_api_page),
 #                 "bot": ("ربات تلگرام", self.bot_page),
 #                 "settings": ("تنظیمات پنل", self.settings),
 #                 "restore": ("بازیابی از نسخهٔ پشتیبان", self.restore_page),
@@ -30299,6 +30397,33 @@ exit 0
 #                                                          or r["telegram_id"] or "#%d" % r["id"])),
 #                              html.escape(r["first_name"] or ""), html.escape(r["status"])))
 #            out.append("</table></div>")
+#        return "".join(out)
+#
+#    def site_api_page(self):
+#        p = CFG["ADMIN_PATH"]
+#        rows = STORE.q("SELECT * FROM api_tokens WHERE scope = 'site' ORDER BY id DESC")
+#        out = ["<div class='card'><h2>اتصال وب‌سایت به Hunter DNS</h2>"
+#               "<p>این API برای سایت آزمایشی است. با کلید اختصاصی می‌تواند وضعیت اتصال و پلن‌های قابل فروش را بخواند و مشتری جدید را در دیتابیس مرکزی ثبت کند. حساب جدید ابتدا <b>در انتظار فعال‌سازی</b> می‌ماند؛ سایت به‌تنهایی نمی‌تواند حجم، پلن یا دسترسی سرورها را اعطا کند.</p>"
+#               "<p>نشانی پایه: <code dir='ltr'>%s</code></p>"
+#               "<p class='muted'>کلید فقط یک‌بار بعد از ساخت نمایش داده می‌شود. آن را در کد سمت سرور سایت نگه دارید؛ هرگز داخل JavaScript مرورگر قرار ندهید.</p></div>" % html.escape(bot_api_url().split("/api/v1/")[0])]
+#        out.append("<div class='card'><h2>ساخت کلید اختصاصی سایت</h2><form method='post' action='/%s/site-api-key-new'><div class='f'><label>نام سایت یا پروژه</label><input name='name' required maxlength='40' placeholder='مثلاً فروشگاه Hunter'></div><div class='f'><label>محدودیت IP (اختیاری، با کاما جدا کنید)</label><input name='allow_ips' dir='ltr' placeholder='203.0.113.10'></div><button>ساخت کلید API سایت</button></form></div>" % p)
+#        if rows:
+#            out.append("<div class='card'><h2>کلیدهای API سایت</h2><table><tr><th>نام</th><th>ساخته‌شده</th><th>آخرین استفاده</th><th>IP مجاز</th><th>وضعیت</th><th></th></tr>")
+#            for r in rows:
+#                live = not r["revoked_at"]
+#                confirm = html.escape(json.dumps("این کلید باطل شود؟ اتصال سایت با آن قطع خواهد شد.", ensure_ascii=False), quote=True)
+#                out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td></tr>" % (
+#                    html.escape(r["name"]), html.escape(show_date(r["created_at"], True)),
+#                    html.escape(show_date(r["last_used_at"] or "هرگز", True)),
+#                    html.escape(r["allow_ips"] or "همه"), "فعال" if live else "باطل",
+#                    ("<form method='post' action='/%s/site-api-key-revoke' onsubmit='return confirm(%s)'><input type='hidden' name='id' value='%d'><button class='del'>باطل‌کردن</button></form>" % (p, confirm, r["id"])) if live else ""))
+#            out.append("</table></div>")
+#        out.append("""<div class='card'><h2>آزمایش اتصال</h2><p>درخواست وضعیت:</p><pre dir='ltr'><code>GET %s/api/v1/site/ping
+#Authorization: Bearer YOUR_SITE_API_KEY</code></pre><p>ثبت مشتری آزمایشی:</p><pre dir='ltr'><code>POST %s/api/v1/site/customers
+#Authorization: Bearer YOUR_SITE_API_KEY
+#Content-Type: application/json
+#
+#{\"external_id\":\"order-1001\",\"name\":\"Test Customer\",\"phone\":\"+989121234567\"}</code></pre><p class='muted'>برای هر مشتری external_id ثابت و یکتا بفرستید. تکرار همان شناسه مشتری جدید نمی‌سازد. پاسخ شامل user.id پنل است. برای فعال‌سازی و انتخاب پلن، از پنل مدیریت اقدام کنید.</p></div>""" % (html.escape(bot_api_url().split("/api/v1/")[0]), html.escape(bot_api_url().split("/api/v1/")[0])))
 #        return "".join(out)
 #
 #    def api_keys(self):
@@ -31642,6 +31767,39 @@ exit 0
 #                return self.redirect("bot?m=!ربات راه‌اندازی نشده")
 #            self.queue_bot_test(row["id"])
 #            return self.redirect("bot?m=پیام آزمایشی در صف است؛ چند ثانیه دیگر در تلگرام")
+#
+#        if rest == "site-api-key-new":
+#            name = one("name").strip()[:40]
+#            if not name:
+#                return self.redirect("site-api?m=!یک نام برای کلید بنویسید")
+#            allowed = []
+#            for a in one("allow_ips").replace("،", ",").split(","):
+#                a = a.strip()
+#                if not a:
+#                    continue
+#                try:
+#                    allowed.append(str(ipaddress.ip_address(a)))
+#                except ValueError:
+#                    return self.redirect("site-api?m=!«%s» آی‌پی درستی نیست" % a[:40])
+#            key = "site_" + secrets.token_urlsafe(36)
+#            STORE.run("INSERT INTO api_tokens (name, token_hash, allow_ips, created_at, scope) VALUES (?, ?, ?, ?, 'site')",
+#                      (name, hashlib.sha256(key.encode("utf-8")).hexdigest(), ",".join(allowed) or None, now()))
+#            log(INFO, "site API key %r created%s" % (name, " with IP allowlist" if allowed else ""))
+#            card = ("<div class='card'><h2>کلید API سایت: %s</h2><p class='onetime'><code>%s</code></p>"
+#                    "<p><b>این کلید فقط همین یک بار نمایش داده می‌شود.</b> آن را در متغیر محیطی سمت سرور سایت نگه دارید؛ داخل JavaScript مرورگر یا مخزن عمومی قرار ندهید.</p>"
+#                    "<p>نشانی پایه: <code dir='ltr'>%s</code></p>"
+#                    "<p>دسترسی این کلید محدود به <code>/api/v1/site/*</code> است و به API ربات یا API مدیریت دسترسی ندارد.</p>"
+#                    "<a href='/%s/site-api'>برگشت به API سایت</a></div>" %
+#                    (html.escape(name), html.escape(key), html.escape(bot_api_url().split("/api/v1/")[0]), CFG["ADMIN_PATH"]))
+#            return self.send(page("کلید API سایت", card, CFG, "site-api"))
+#
+#        if rest == "site-api-key-revoke":
+#            kid = int(one("id") or 0)
+#            cur = STORE.run("UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND scope = 'site' AND revoked_at IS NULL",
+#                            (now(), kid))
+#            if not cur.rowcount:
+#                return self.redirect("site-api?m=!کلید پیدا نشد یا قبلاً باطل شده")
+#            return self.redirect("site-api?m=کلید API سایت باطل شد")
 #
 #        if rest == "api-key-new":
 #            name = one("name").strip()[:40]
