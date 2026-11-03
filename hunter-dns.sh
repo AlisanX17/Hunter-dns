@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.4"
+VERSION="0.1.3"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -22081,13 +22081,11 @@ exit 0
 #    """Whether the operator's backup is due: turned on, and the days since
 #    the last one that went out have passed."""
 #    row = STORE.one("SELECT value FROM settings WHERE key = 'backup_every_days'")
-#    # First install / upgrade with no explicit operator choice: enabled every
-#    # three days. An existing empty value remains an intentional opt-out.
 #    try:
-#        every = int(row["value"]) if row is not None and row["value"] else (3 if row is None else 0)
-#    except (ValueError, TypeError):
+#        every = int(row["value"]) if row and row["value"] else 0
+#    except ValueError:
 #        every = 0
-#    if not every or not backup_password():
+#    if not every:
 #        return False
 #    row = STORE.one("SELECT value FROM settings WHERE key = 'backup_last'")
 #    try:
@@ -22145,8 +22143,7 @@ exit 0
 #    env = read_env(BOT_ENV)
 #    ready = env.get("BOT_TOKEN") and re.search(r"\d", env.get("ADMIN_IDS") or "")
 #    row = STORE.one("SELECT value FROM settings WHERE key = 'backup_every_days'")
-#    # Show the new default as enabled, but preserve an explicit opt-out.
-#    every = (row["value"] if row is not None else "3") or ""
+#    every = (row["value"] if row else "") or ""
 #    row = STORE.one("SELECT value FROM settings WHERE key = 'backup_last'")
 #    try:
 #        last = json.loads(row["value"]) if row and row["value"] else {}
