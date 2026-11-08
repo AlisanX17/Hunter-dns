@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.5"
+VERSION="0.1.6"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -28824,6 +28824,8 @@ exit 0
 #spellcheck="false" autofocus style="width:100%%"></div>
 #<div class="f"><label>رمز عبور</label>
 #<input type="password" name="password" autocomplete="current-password" style="width:100%%"></div>
+#<div class="f"><label>کد Authenticator یا کد بازیابی (اگر فعال کرده‌اید)</label>
+#<input name="totp" inputmode="numeric" autocomplete="one-time-code" dir="ltr" maxlength="32" style="width:100%%"></div>
 #<button type="submit" style="width:100%%">ورود</button></form></div>
 #</div>%s</div></body></html>""" % (THEME_HEAD,
 #                                   font_face("/" + cfg["ADMIN_PATH"]) + CSS,
@@ -31006,6 +31008,7 @@ exit 0
 #
 #        out.append(upstream_card())
 #        out.append(doh_name_card(p))
+#        out.append(totp_card(p))
 #
 #        auto_on = setting("auto_transport") == "1"
 #        out.append(
@@ -31140,14 +31143,14 @@ exit 0
 #        account = totp_account_key(current_admin["id"] if current_admin is not None else None)
 #        if rest == "totp-setup":
 #            if totp_enabled(account):
-#                return self.redirect("me?m=!تأیید دومرحله‌ای از قبل فعال است")
+#                return self.redirect("settings?m=!تأیید دومرحله‌ای از قبل فعال است")
 #            secret = totp_new_secret()
 #            totp_put(account, "pending", secret)
-#            return self.redirect("me?m=کلید ساخته شد؛ آن را در Authenticator وارد کنید")
+#            return self.redirect("settings?m=کلید ساخته شد؛ آن را در Authenticator وارد کنید")
 #        if rest == "totp-enable":
 #            secret = totp_setting(account, "pending")
 #            if not secret or not totp_valid(secret, one("code")):
-#                return self.redirect("me?m=!کد نامعتبر است؛ ساعت گوشی را بررسی کنید")
+#                return self.redirect("settings?m=!کد نامعتبر است؛ ساعت گوشی را بررسی کنید")
 #            codes = [secrets.token_hex(5).upper() for _ in range(8)]
 #            totp_put(account, "secret", secret)
 #            totp_put(account, "active", "1")
@@ -31158,12 +31161,12 @@ exit 0
 #                    "<p>این کدهای بازیابی را همین حالا ذخیره کنید؛ هرکدام فقط یک‌بار قابل استفاده است.</p>"
 #                    "<pre dir='ltr' style='white-space:pre-wrap'>%s</pre>"
 #                    "<p class='muted'>پس از بستن این صفحه، کدهای خام دوباره نمایش داده نمی‌شوند.</p>"
-#                    "<a href='/%s/me'>بازگشت به پروفایل</a></div>" %
+#                    "<a href='/%s/settings'>بازگشت به تنظیمات</a></div>" %
 #                    ("\n".join(codes), CFG["ADMIN_PATH"]))
-#            return self.send(page("کدهای بازیابی", body, CFG, "me"))
+#            return self.send(page("کدهای بازیابی", body, CFG, "settings"))
 #        if rest == "totp-cancel":
 #            totp_delete(account, "pending")
-#            return self.redirect("me?m=راه‌اندازی لغو شد")
+#            return self.redirect("settings?m=راه‌اندازی لغو شد")
 #        if rest == "totp-disable":
 #            password = one("password")
 #            code = one("code")
@@ -31176,10 +31179,10 @@ exit 0
 #                    current_admin["password_hash"])
 #            if not valid_password or not totp_login_valid(
 #                    current_admin["id"] if current_admin is not None else None, code):
-#                return self.redirect("me?m=!رمز عبور یا کد تأیید نادرست است")
+#                return self.redirect("settings?m=!رمز عبور یا کد تأیید نادرست است")
 #            for part in ("active", "secret", "pending", "recovery"):
 #                totp_delete(account, part)
-#            return self.redirect("me?m=تأیید دومرحله‌ای غیرفعال شد")
+#            return self.redirect("settings?m=تأیید دومرحله‌ای غیرفعال شد")
 #
 #        if rest == "user-save":
 #            uid = int(one("id") or 0)
