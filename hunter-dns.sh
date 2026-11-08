@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.4"
+VERSION="0.1.5"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -21566,6 +21566,110 @@ exit 0
 #        "sha256", password.encode(), bytes.fromhex(salt), 200_000).hex()
 #
 #
+## ------------------------------------------------------------------ TOTP
+## Optional per-account authenticator protection. Secrets and recovery-code
+## hashes live in the existing settings table; no customer data or schema change.
+#def totp_account_key(admin_id=None):
+#    return "owner" if admin_id is None else "admin:%s" % int(admin_id)
+#
+#
+#def totp_setting(account, part):
+#    row = STORE.one("SELECT value FROM settings WHERE key = ?",
+#                    ("totp:%s:%s" % (account, part),))
+#    return row["value"] if row else ""
+#
+#
+#def totp_put(account, part, value):
+#    STORE.run("INSERT INTO settings (key, value) VALUES (?, ?)"
+#              " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+#              ("totp:%s:%s" % (account, part), value))
+#
+#
+#def totp_delete(account, part):
+#    STORE.run("DELETE FROM settings WHERE key = ?",
+#              ("totp:%s:%s" % (account, part),))
+#
+#
+#def totp_new_secret():
+#    return base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+#
+#
+#def totp_code(secret, at=None):
+#    raw = secret.upper().encode("ascii")
+#    raw += b"=" * ((8 - len(raw) % 8) % 8)
+#    key = base64.b32decode(raw)
+#    counter = int((time.time() if at is None else at) // 30)
+#    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+#    offset = digest[-1] & 15
+#    number = (struct.unpack(">I", digest[offset:offset + 4])[0] & 0x7fffffff) % 1000000
+#    return "%06d" % number
+#
+#
+#def totp_valid(secret, code):
+#    code = re.sub(r"\s+", "", str(code or ""))
+#    if not re.fullmatch(r"\d{6}", code):
+#        return False
+#    return any(hmac.compare_digest(totp_code(secret, time.time() + drift * 30), code)
+#               for drift in (-1, 0, 1))
+#
+#
+#def totp_recovery_valid(account, code):
+#    code = re.sub(r"[^A-Za-z0-9]", "", str(code or "")).upper()
+#    if not code:
+#        return False
+#    raw = totp_setting(account, "recovery")
+#    try:
+#        hashes = json.loads(raw) if raw else []
+#    except (ValueError, TypeError):
+#        hashes = []
+#    digest = hashlib.sha256(code.encode("ascii")).hexdigest()
+#    for i, old in enumerate(hashes):
+#        if hmac.compare_digest(old, digest):
+#            hashes.pop(i)
+#            totp_put(account, "recovery", json.dumps(hashes))
+#            return True
+#    return False
+#
+#
+#def totp_enabled(account):
+#    return bool(totp_setting(account, "active"))
+#
+#
+#def totp_login_valid(admin_id, code):
+#    account = totp_account_key(admin_id)
+#    secret = totp_setting(account, "secret")
+#    return bool(secret and (totp_valid(secret, code) or totp_recovery_valid(account, code)))
+#
+#
+#def totp_card(p):
+#    admin = getattr(REQ, "admin", None)
+#    account = totp_account_key(admin["id"] if admin is not None else None)
+#    enabled = totp_enabled(account)
+#    pending = totp_setting(account, "pending")
+#    if enabled:
+#        state = "<span class='good'>فعال است</span>"
+#        controls = ("<form method='post' action='/%s/totp-disable'>"
+#                    "<div class='f'><label>رمز عبور فعلی</label><input type='password' name='password' required></div>"
+#                    "<div class='f'><label>کد Authenticator یا کد بازیابی</label><input name='code' inputmode='numeric' required></div>"
+#                    "<button class='danger'>غیرفعال‌کردن تأیید دومرحله‌ای</button></form>" % p)
+#    elif pending:
+#        uri = "otpauth://totp/Hunter%%20DNS:%s?secret=%s&issuer=Hunter%%20DNS&algorithm=SHA1&digits=6&period=30" % (
+#            urllib.parse.quote(owner_name() if admin is None else admin["username"]), pending)
+#        state = "<span class='warn'>در انتظار تأیید</span>"
+#        controls = ("<p>این کلید را در Google Authenticator یا Microsoft Authenticator به‌صورت دستی وارد کنید:</p>"
+#                    "<p dir='ltr'><code style='word-break:break-all'>%s</code></p>"
+#                    "<p class='muted'>کد ۶ رقمی برنامه را برای فعال‌سازی وارد کنید. این کلید را محرمانه نگه دارید.</p>"
+#                    "<form method='post' action='/%s/totp-enable'><input name='code' inputmode='numeric' pattern='[0-9]{6}' maxlength='6' placeholder='کد ۶ رقمی' required><button>تأیید و فعال‌سازی</button></form>"
+#                    "<form method='post' action='/%s/totp-cancel'><button class='ghost'>لغو راه‌اندازی</button></form>" %
+#                    (html.escape(pending), p, p))
+#    else:
+#        state = "<span class='muted'>خاموش</span>"
+#        controls = ("<form method='post' action='/%s/totp-setup'><button>راه‌اندازی Authenticator</button></form>" % p)
+#    return ("<div class='card'><h2>ورود دومرحله‌ای (Authenticator)</h2>"
+#            "<p>وضعیت این حساب: %s</p><p class='muted'>پس از فعال‌سازی، هنگام ورود علاوه بر رمز عبور، کد ۶ رقمی برنامهٔ Authenticator لازم است. این تنظیم فقط برای حساب فعلی شماست.</p>%s</div>"
+#            % (state, controls))
+#
+#
 ## ------------------------------------------------------------------ storage
 #class Store:
 #    def __init__(self, path):
@@ -27833,7 +27937,9 @@ exit 0
 #    "public-dns": "settings", "auto-transport": "settings", "server-list-save": "nodes", "seller-server-notes": ANYONE,
 #    "dns-bench": "settings", "dns-upstream": "settings", "doh-name": "settings",
 #    "telegram-required": "settings", "portal-open": "settings", "calendar-save": "settings", "watch-start": "logs", "diagnose-start": "logs",
-#    "me-password": ANYONE, "view-as-stop": ANYONE}
+#    "me-password": ANYONE, "view-as-stop": ANYONE,
+#    "totp-setup": ANYONE, "totp-enable": ANYONE,
+#    "totp-cancel": ANYONE, "totp-disable": ANYONE}
 ## Everything else - the owner's password, the panel's address, backups and
 ## restoring them, the standby, upgrading from GitHub, the admins - is the
 ## owner's alone.
@@ -28620,7 +28726,7 @@ exit 0
 #    row = me()
 #    if row is None:
 #        return ("<div class='card'><h2>پروفایل من</h2><p>شما مالک این پنل "
-#                "هستید: <code>%s</code></p></div>" % html.escape(owner_name() or "—"))
+#                "هستید: <code>%s</code></p></div>" % html.escape(owner_name() or "—")) + totp_card(p)
 #    labels = dict(ADMIN_SECTIONS)
 #    return (seller_card(p, row) + seller_notes_card(p, row) if row["own_only"] else "") + (
 #            "<div class='card'><h2>پروفایل "
@@ -28633,7 +28739,7 @@ exit 0
 #               html.escape("، ".join(labels[k] for k in ADMIN_SECTIONS_ORDER
 #                                    if k in admin_perms(row)
 #                                    and (not row["own_only"] or k in RESELLER_SECTIONS))
-#                               or "—"), p))
+#                               or "—"), p)) + totp_card(p)
 #
 #
 #TRIANGLE_LOADING_CSS = r"""
@@ -29644,6 +29750,10 @@ exit 0
 #                                               row["password_hash"]):
 #                    who = row["id"]
 #            if who is not False:
+#                if totp_enabled(totp_account_key(who)) and not totp_login_valid(
+#                        who, self.one(params, "totp")):
+#                    self.note_failure()
+#                    return self.send(login_page(CFG, "کد Authenticator یا کد بازیابی نادرست است."))
 #                token = secrets.token_urlsafe(32)
 #                STORE.run(
 #                    "INSERT OR REPLACE INTO admin_sessions (token, expires_at, admin_id)"
@@ -31024,6 +31134,52 @@ exit 0
 #
 #    def action(self, rest, params):
 #        one = lambda k, d="": self.one(params, k, d)
+#
+#        # Authenticator setup is per signed-in account, never shared between admins.
+#        current_admin = getattr(REQ, "admin", None)
+#        account = totp_account_key(current_admin["id"] if current_admin is not None else None)
+#        if rest == "totp-setup":
+#            if totp_enabled(account):
+#                return self.redirect("me?m=!تأیید دومرحله‌ای از قبل فعال است")
+#            secret = totp_new_secret()
+#            totp_put(account, "pending", secret)
+#            return self.redirect("me?m=کلید ساخته شد؛ آن را در Authenticator وارد کنید")
+#        if rest == "totp-enable":
+#            secret = totp_setting(account, "pending")
+#            if not secret or not totp_valid(secret, one("code")):
+#                return self.redirect("me?m=!کد نامعتبر است؛ ساعت گوشی را بررسی کنید")
+#            codes = [secrets.token_hex(5).upper() for _ in range(8)]
+#            totp_put(account, "secret", secret)
+#            totp_put(account, "active", "1")
+#            totp_put(account, "recovery", json.dumps([
+#                hashlib.sha256(c.encode("ascii")).hexdigest() for c in codes]))
+#            totp_delete(account, "pending")
+#            body = ("<div class='card'><h2>Authenticator فعال شد</h2>"
+#                    "<p>این کدهای بازیابی را همین حالا ذخیره کنید؛ هرکدام فقط یک‌بار قابل استفاده است.</p>"
+#                    "<pre dir='ltr' style='white-space:pre-wrap'>%s</pre>"
+#                    "<p class='muted'>پس از بستن این صفحه، کدهای خام دوباره نمایش داده نمی‌شوند.</p>"
+#                    "<a href='/%s/me'>بازگشت به پروفایل</a></div>" %
+#                    ("\n".join(codes), CFG["ADMIN_PATH"]))
+#            return self.send(page("کدهای بازیابی", body, CFG, "me"))
+#        if rest == "totp-cancel":
+#            totp_delete(account, "pending")
+#            return self.redirect("me?m=راه‌اندازی لغو شد")
+#        if rest == "totp-disable":
+#            password = one("password")
+#            code = one("code")
+#            if current_admin is None:
+#                valid_password = hmac.compare_digest(
+#                    hash_password(password, CFG["ADMIN_SALT"]), CFG["ADMIN_HASH"])
+#            else:
+#                valid_password = hmac.compare_digest(
+#                    hash_password(password, current_admin["password_salt"]),
+#                    current_admin["password_hash"])
+#            if not valid_password or not totp_login_valid(
+#                    current_admin["id"] if current_admin is not None else None, code):
+#                return self.redirect("me?m=!رمز عبور یا کد تأیید نادرست است")
+#            for part in ("active", "secret", "pending", "recovery"):
+#                totp_delete(account, part)
+#            return self.redirect("me?m=تأیید دومرحله‌ای غیرفعال شد")
 #
 #        if rest == "user-save":
 #            uid = int(one("id") or 0)
@@ -38506,7 +38662,6 @@ exit 0
 #sledgehammergames.com
 #smilegate.com
 #sndcdn.com
-#snd.sc
 #socket.io
 #softlayer.com
 #softonic.com
@@ -39953,7 +40108,6 @@ exit 0
 #          "key": "main",
 #          "label": "همه",
 #          "domains": [
-#            "snd.sc",
 #            "sndcdn.com",
 #            "soundcloud.com"
 #          ]
