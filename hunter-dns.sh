@@ -38,7 +38,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 # What this file is. Written to the machine once an install finishes, so the
 # next run can tell whether it is an upgrade, a re-run, or somebody about to
 # put an older version over a newer one by accident.
-VERSION="0.1.3"
+VERSION="0.1.4"
 
 # What this install did, so uninstall can undo exactly that and nothing more.
 # Without it, removal would be guesswork: whether dnsmasq was ours or already
@@ -38506,6 +38506,7 @@ exit 0
 #sledgehammergames.com
 #smilegate.com
 #sndcdn.com
+#snd.sc
 #socket.io
 #softlayer.com
 #softonic.com
@@ -39952,6 +39953,7 @@ exit 0
 #          "key": "main",
 #          "label": "همه",
 #          "domains": [
+#            "snd.sc",
 #            "sndcdn.com",
 #            "soundcloud.com"
 #          ]
